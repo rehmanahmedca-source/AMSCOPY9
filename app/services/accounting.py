@@ -326,6 +326,67 @@ def _sync_linked_client_refund_tx(src_id, from_account_id, amount, date_posted, 
         primary.date_posted = date_posted
 
 
+def _sync_linked_driver_payment_tx(kind, src_id, from_account_id, amount, date_posted, description, note, is_void):
+    """Keep exactly one money-out ledger row for a driver service payment.
+
+    Mirrors ``_sync_linked_supplier_payment_tx``: the source row is authoritative
+    for *who/why*, this single ``AccountTransaction`` is authoritative for the
+    *financial effect*.  Amount/account changes void-and-recreate so an edit can
+    never apply the old and the new effect at the same time.
+    """
+    marker = _src_marker(kind, src_id)
+    existing = AccountTransaction.query.filter(
+        AccountTransaction.transaction_type == 'Driver Payment',
+        or_(AccountTransaction.note.ilike(f"%{marker}%"),
+            and_(AccountTransaction.source_type == kind,
+                 AccountTransaction.source_id == src_id))
+    ).order_by(AccountTransaction.id.desc()).all()
+
+    primary = existing[0] if existing else None
+    for extra in existing[1:]:
+        _void_account_tx(extra)
+
+    desired_ok = (not bool(is_void)) and bool(from_account_id) and float(amount or 0) > 0
+    if not desired_ok:
+        if primary:
+            _void_account_tx(primary)
+        return
+
+    if primary and (not primary.is_void) and (
+        primary.from_account_id != from_account_id or _tx_minor(primary) != to_minor(amount or 0)
+    ):
+        _void_account_tx(primary)
+        primary = None
+
+    if primary and primary.is_void:
+        primary = None
+
+    if not primary:
+        tx = AccountTransaction(
+            from_account_id=from_account_id,
+            to_account_id=None,
+            amount=float(from_minor(to_minor(amount or 0))),
+            amount_minor=to_minor(amount or 0),
+            description=description,
+            note=(note or '').strip(),
+            transaction_type='Driver Payment',
+            source_type=kind,
+            source_id=src_id,
+            date_posted=date_posted or pk_now()
+        )
+        db.session.add(tx)
+        db.session.flush()
+        _apply_account_tx_effect(tx)
+        return
+
+    primary.source_type = kind
+    primary.source_id = src_id
+    primary.description = description
+    primary.note = (note or '').strip()
+    if date_posted:
+        primary.date_posted = date_posted
+
+
 def _sync_linked_loss_tx(kind, src_id, amount, date_posted, description, note, is_void):
     marker = _src_marker(kind, src_id, suffix='LOSS')
     existing = AccountTransaction.query.filter(
@@ -428,6 +489,56 @@ def _sync_direct_sale_accounting(sale):
         description=desc,
         note=note,
         is_void=bool(getattr(sale, 'is_void', False))
+    )
+
+
+def _sync_delivery_person_payment_accounting(payment):
+    """Project one driver settlement onto the authoritative account ledger.
+
+    ``amount_paid``  -> money OUT of the selected cash/bank account.
+    ``waive_off_amount`` -> a non-cash ``Loss`` row (the driver's payable is
+    reduced without any cash leaving an account), exactly as client waive-offs
+    are handled.  Both are keyed on the source row, so repeated calls converge
+    instead of accumulating duplicates.
+    """
+    if not payment:
+        return
+    person = None
+    try:
+        person = db.session.get(DeliveryPerson, getattr(payment, 'delivery_person_id', None))
+    except Exception:
+        person = None
+    driver_name = getattr(person, 'name', None) or 'Driver'
+    reference = (getattr(payment, 'reference', None) or f"DPP-{payment.id}").strip()
+    marker = _src_marker('DeliveryPersonPayment', payment.id)
+    note_bits = [
+        str(getattr(payment, 'note', '') or '').strip(),
+        f"Method: {getattr(payment, 'method', '') or ''}".strip(),
+        f"Driver: {driver_name}",
+        marker,
+    ]
+    note = " ".join([x for x in note_bits if x and not x.endswith(': ')]).strip()
+    _sync_linked_driver_payment_tx(
+        kind='DeliveryPersonPayment',
+        src_id=payment.id,
+        from_account_id=getattr(payment, 'payment_account_id', None),
+        amount=float(getattr(payment, 'amount_paid', 0) or 0),
+        date_posted=getattr(payment, 'date_posted', None),
+        description=f"Driver service payment to {driver_name} ({reference})",
+        note=note,
+        is_void=bool(getattr(payment, 'is_void', False)),
+    )
+    _sync_linked_loss_tx(
+        kind='DeliveryPersonPayment',
+        src_id=payment.id,
+        amount=float(getattr(payment, 'waive_off_amount', 0) or 0),
+        date_posted=getattr(payment, 'date_posted', None),
+        description=f"Driver settlement waive-off for {driver_name} ({reference})",
+        note=" ".join([x for x in [
+            str(getattr(payment, 'note', '') or '').strip(),
+            _src_marker('DeliveryPersonPayment', payment.id, suffix='LOSS'),
+        ] if x]).strip(),
+        is_void=bool(getattr(payment, 'is_void', False)),
     )
 
 

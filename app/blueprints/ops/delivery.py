@@ -1,6 +1,8 @@
 """delivery — split from ops.py."""
 from ._common import *  # noqa
 
+from uuid import uuid4
+
 @bp.route('/delivery_rents')
 @login_required
 def delivery_rents_page():
@@ -115,9 +117,16 @@ def delivery_rents_page():
     }
     driver_names = sorted(active_driver_names | historical_driver_names)
 
+    payment_accounts = Account.query.filter(
+        func.coalesce(Account.is_active, True) == True,  # noqa: E712
+        func.lower(func.trim(Account.category)).in_(['cash', 'bank']),
+    ).order_by(Account.name.asc(), Account.id.asc()).all()
+
     return render_template(
         'delivery_rents.html',
         rows=rows,
+        payment_accounts=payment_accounts,
+        submission_token=uuid4().hex,
         total_rent=total_rent,
         total_paid=total_paid,
         total_waived=total_waived,
@@ -149,6 +158,7 @@ def void_delivery_rent(id):
 @bp.route('/delivery_rents/pay/<int:alloc_id>', methods=['POST'])
 @login_required
 def pay_delivery_rent(alloc_id):
+    """Per-allocation entry point — same core, same single financial transaction."""
     if not _user_can('can_manage_sales'):
         flash('Permission denied', 'danger')
         return redirect(url_for('delivery_rents_page'))
@@ -158,54 +168,34 @@ def pay_delivery_rent(alloc_id):
         flash('Invalid delivery rent entry.', 'danger')
         return redirect(url_for('delivery_rents_page'))
 
+    from app.services.driver_payments import save_driver_payment
     try:
-        paid_amount = float(request.form.get('paid_amount', 0) or 0)
-    except ValueError:
-        paid_amount = 0
-    try:
-        waive_amount = float(request.form.get('waive_off_amount', 0) or 0)
-    except ValueError:
-        waive_amount = 0
-
-    if paid_amount < 0 or waive_amount < 0:
-        flash('Amounts cannot be negative.', 'danger')
-        return redirect(url_for('delivery_rents_page'))
-
-    existing = db.session.query(
-        func.sum(DeliveryPersonPayment.amount_paid),
-        func.sum(DeliveryPersonPayment.waive_off_amount)
-    ).filter(
-        DeliveryPersonPayment.is_void == False,
-        DeliveryPersonPayment.allocation_id == alloc_id
-    ).first()
-    already_paid = float(existing[0] or 0) if existing else 0.0
-    already_waived = float(existing[1] or 0) if existing else 0.0
-    max_payable = max(0.0, float(alloc.rent_amount or 0) - already_paid - already_waived)
-
-    if paid_amount + waive_amount <= 0:
-        flash('Enter paid or waive-off amount.', 'danger')
-        return redirect(url_for('delivery_rents_page'))
-    if paid_amount + waive_amount > max_payable + 0.0001:
-        flash('Paid + waive-off exceeds due amount.', 'danger')
-        return redirect(url_for('delivery_rents_page'))
-
-    note = (request.form.get('note') or '').strip()
-    date_str = (request.form.get('date') or '').strip()
-    pay_dt = resolve_posted_datetime(date_str) if date_str else pk_now()
-
-    db.session.add(DeliveryPersonPayment(
-        delivery_person_id=alloc.delivery_person_id,
-        sale_id=alloc.sale_id,
-        allocation_id=alloc.id,
-        amount_paid=paid_amount,
-        waive_off_amount=waive_amount,
-        note=note,
-        date_posted=pay_dt,
-        created_by=(current_user.username if current_user and current_user.is_authenticated else None),
-        is_void=False
-    ))
-    db.session.commit()
-    flash('Delivery rent payment recorded.', 'success')
+        payment, _created = save_driver_payment(
+            delivery_person_id=alloc.delivery_person_id,
+            allocation_id=alloc.id,
+            amount_paid=request.form.get('paid_amount', 0) or 0,
+            waive_off_amount=request.form.get('waive_off_amount', 0) or 0,
+            method=(request.form.get('method') or 'Cash'),
+            payment_account_id=request.form.get('payment_account_id', type=int),
+            reference=(request.form.get('reference') or '').strip(),
+            date_posted=(request.form.get('date') or '').strip(),
+            note=(request.form.get('note') or '').strip(),
+            idempotency_key=(request.form.get('idempotency_key') or '').strip() or None,
+            actor=current_user,
+        )
+        replayed = getattr(payment, '_idempotent_replay', False)
+        db.session.commit()
+        if replayed:
+            flash('This delivery rent payment was already recorded; no duplicate was created.', 'info')
+        else:
+            flash('Delivery rent payment recorded. The selected account and the driver ledger were updated together.', 'success')
+    except ValueError as exc:
+        db.session.rollback()
+        flash(str(exc), 'danger')
+    except Exception as exc:
+        db.session.rollback()
+        logging.getLogger(__name__).exception('Delivery rent payment failed')
+        flash(f'Unable to record the delivery rent payment: {exc}', 'danger')
     return redirect(url_for('delivery_rents_page'))
 
 

@@ -3,6 +3,7 @@ from .sales import *  # noqa
 from .stock import *  # noqa
 from .parties import *  # noqa
 from .cash import *  # noqa
+from .delivery import *  # noqa
 from utils.money import sync_money_fields
 from .helpers import (
     _normalize_auto_bill_model,
@@ -23,6 +24,9 @@ def _normalize_bill_identities(session, flush_context, instances):
                 sync_money_fields(obj, 'opening_balance', 'opening_balance_minor')
         elif isinstance(obj, AccountTransaction):
             sync_money_fields(obj, 'amount', 'amount_minor')
+        elif isinstance(obj, DeliveryPersonPayment):
+            sync_money_fields(obj, 'amount_paid', 'amount_paid_minor')
+            sync_money_fields(obj, 'waive_off_amount', 'waive_off_minor')
         elif isinstance(obj, AccountReconciliation):
             for value_attr, minor_attr in (
                 ('previous_balance', 'previous_balance_minor'),

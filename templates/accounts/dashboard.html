@@ -347,7 +347,8 @@
 
 <div class="modal fade" id="newTransactionModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg">
-        <form method="POST" action="{{ url_for('accounts.add_transaction') }}" class="modal-content">
+        <form method="POST" action="{{ url_for('accounts.add_transaction') }}" class="modal-content" onsubmit="var b=this.querySelector('button[type=submit]'); if(b){setTimeout(function(){b.disabled=true;},0);}">
+            <input type="hidden" name="idempotency_key" value="acctx-{{ submission_token }}">
             <div class="modal-header">
                 <h5 class="modal-title">Make New Transaction</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -500,6 +501,7 @@
                                     <select class="form-select" name="pay_target" id="pay_target">
                                         <option value="company_transfer">Company Account Transfer</option>
                                         <option value="supplier">Supplier Payment</option>
+                                        <option value="driver">Driver Service Payment</option>
                                         <option value="client_refund">Client Refund</option>
                                         <option value="loan">Loan Payment</option>
                                         <option value="personal_expense">Personal Expense</option>
@@ -562,6 +564,24 @@
                                         </div>
                                     </div>
                                     <div id="payClientNameInfo" class="small mt-2 text-info fw-bold"></div>
+                                </div>
+
+                                <div class="col-md-6 d-none" id="driverWrap">
+                                    <label class="form-label">Driver / Delivery Person</label>
+                                    <input type="hidden" name="delivery_person_id" id="delivery_person_id" value="">
+                                    <input type="text" name="driver_input" id="payDriverInput" class="form-control" list="payDriverOptions" placeholder="Search driver" autocomplete="off" oninput="syncDriverSelection()">
+                                    <datalist id="payDriverOptions">
+                                        {% for d in delivery_persons %}
+                                        <option value="{{ d.name }}" data-id="{{ d.id }}">Outstanding: Rs. {{ "{:,.2f}".format(driver_outstanding.get(d.id, 0)) }}</option>
+                                        {% endfor %}
+                                    </datalist>
+                                    <div id="payDriverInfo" class="small mt-2 text-info fw-bold"></div>
+                                    <div class="small text-white-50 mt-1">The payment is allocated FIFO across the driver's open delivery rents and reduces the selected account.</div>
+                                </div>
+
+                                <div class="col-md-6 d-none" id="payReferenceWrap">
+                                    <label class="form-label">Reference</label>
+                                    <input type="text" class="form-control" name="reference" id="pay_reference" placeholder="Voucher / slip no.">
                                 </div>
                     </div>
                 </div>
@@ -844,6 +864,12 @@ function setPayTargetMode() {
     payToWrap.classList.toggle('d-none', target !== 'company_transfer');
     supplierWrap.classList.toggle('d-none', target !== 'supplier');
     if (clientRefundWrap) clientRefundWrap.classList.toggle('d-none', target !== 'client_refund');
+    const driverWrap = document.getElementById('driverWrap');
+    const driverInput = document.getElementById('payDriverInput');
+    const payReferenceWrap = document.getElementById('payReferenceWrap');
+    if (driverWrap) driverWrap.classList.toggle('d-none', target !== 'driver');
+    if (payReferenceWrap) payReferenceWrap.classList.toggle('d-none', target !== 'driver');
+    if (driverInput) driverInput.required = isPayMode && target === 'driver';
     targetLabelWrap.classList.toggle('d-none', !['loan', 'personal_expense', 'other_expense'].includes(target));
 
     payTo.required = isPayMode && target === 'company_transfer';
@@ -851,6 +877,20 @@ function setPayTargetMode() {
     if (supplierInput) supplierInput.required = isPayMode && target === 'supplier';
     if (payClientInput) payClientInput.required = isPayMode && target === 'client_refund';
     targetLabel.required = isPayMode && ['loan', 'personal_expense', 'other_expense'].includes(target);
+}
+
+function syncDriverSelection() {
+    const input = document.getElementById('payDriverInput');
+    const hidden = document.getElementById('delivery_person_id');
+    const info = document.getElementById('payDriverInfo');
+    if (!input || !hidden) return;
+    const value = (input.value || '').trim().toLowerCase();
+    const match = Array.prototype.find.call(
+        document.querySelectorAll('#payDriverOptions option'),
+        opt => (opt.value || '').trim().toLowerCase() === value
+    );
+    hidden.value = match ? (match.dataset.id || '') : '';
+    if (info) info.textContent = match ? (match.textContent || '') : '';
 }
 
 function updateDueDisplay() {

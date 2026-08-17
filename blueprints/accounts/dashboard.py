@@ -1,6 +1,8 @@
 """dashboard — split from accounts.py."""
 from ._common import *  # noqa
 
+from uuid import uuid4
+
 @accounts_bp.route('/')
 @login_required
 def dashboard():
@@ -92,6 +94,16 @@ def dashboard():
     
     suppliers = Supplier.query.filter_by(is_active=True).order_by(Supplier.name.asc()).all()
     clients = Client.query.filter_by(is_active=True).order_by(Client.name.asc()).all()
+    # Drivers are payables like suppliers: the Accounts section can pay them
+    # directly, and the resulting transaction appears in the driver ledger.
+    from app.services.driver_payments import driver_outstanding
+    delivery_persons = DeliveryPerson.query.filter_by(is_active=True).order_by(DeliveryPerson.name.asc()).all()
+    driver_outstanding_map = {}
+    for person in delivery_persons:
+        try:
+            driver_outstanding_map[person.id] = driver_outstanding(person.id)
+        except Exception:
+            driver_outstanding_map[person.id] = 0.0
     return render_template('accounts/dashboard.html',
                           client_payments_today=client_payments_today,
                           supplier_payments_today=supplier_payments_today,
@@ -107,6 +119,9 @@ def dashboard():
                           total_cash_money=total_cash_money,
                           suppliers=suppliers,
                           clients=clients,
+                          delivery_persons=delivery_persons,
+                          driver_outstanding=driver_outstanding_map,
+                          submission_token=uuid4().hex,
                           default_tx_datetime=pk_now().strftime('%Y-%m-%dT%H:%M'))
 
 

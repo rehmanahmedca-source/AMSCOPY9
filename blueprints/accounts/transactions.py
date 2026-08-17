@@ -358,6 +358,35 @@ def add_transaction():
                 )
                 audit_log(current_user, 'account.transaction.supplier_payment', f'from={from_account.name}, supplier={supplier.name}, amount={amount}')
                 flash('Supplier payment recorded successfully.', 'success')
+            elif pay_target == 'driver':
+                # Accounts-section entry point for a driver service payment.
+                # Delegates to the same core as the Driver section, so exactly
+                # one financial transaction exists and it is automatically
+                # visible in the driver ledger.
+                driver_id = request.form.get('delivery_person_id', type=int)
+                driver_input = (request.form.get('driver_input') or '').strip()
+                driver = db.session.get(DeliveryPerson, driver_id) if driver_id else None
+                if not driver and driver_input:
+                    driver = DeliveryPerson.query.filter(
+                        func.lower(func.trim(DeliveryPerson.name)) == driver_input.lower()
+                    ).first()
+                if not driver:
+                    raise ValueError('Please select a valid delivery person / driver.')
+                if not driver.is_active:
+                    raise ValueError('The selected delivery person is inactive.')
+
+                from app.services.driver_payments import settle_driver_fifo
+                rows = settle_driver_fifo(
+                    delivery_person_id=driver.id, amount_paid=amount,
+                    method=method or 'Cash', payment_account_id=from_account.id,
+                    reference=(request.form.get('reference') or '').strip(),
+                    date_posted=tx_date, note=note,
+                    idempotency_key=(request.form.get('idempotency_key') or '').strip() or None,
+                    actor=current_user,
+                )
+                audit_log(current_user, 'account.transaction.driver_payment',
+                          f'from={from_account.name}, driver={driver.name}, amount={amount}, rows={len(rows)}')
+                flash('Driver service payment recorded. The driver ledger and the account balance were updated together.', 'success')
             elif pay_target == 'client_refund':
                 # Refund issued to a client: record refund audit (Payment negative for client ledger),
                 # create account transaction for cash out so cash flow reflects it, and keep everything atomic.

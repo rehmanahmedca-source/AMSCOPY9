@@ -418,7 +418,7 @@ def cash_flow():
     # Include general expenses and FBM drawer transfers from AccountTransaction.
     account_tx_query = AccountTransaction.query.filter(
         AccountTransaction.is_void == False,
-        AccountTransaction.transaction_type.in_(['Expense', 'Payment', 'Transfer', 'Receipt']),
+        AccountTransaction.transaction_type.in_(['Expense', 'Payment', 'Driver Payment', 'Transfer', 'Receipt']),
         func.date(AccountTransaction.date_posted) >= from_date,
         func.date(AccountTransaction.date_posted) <= to_date
     )
@@ -493,18 +493,31 @@ def cash_flow():
                 })
             continue
 
-        if tx.transaction_type in ['Expense', 'Payment'] and tx.from_account_id is not None:
+        if tx.transaction_type in ['Expense', 'Payment', 'Driver Payment'] and tx.from_account_id is not None:
             acc = Account.query.get(tx.from_account_id)
             if acc and (acc.category or '').lower() in ('cash', 'bank'):
-                cash_out_rows.append({
+                is_driver = tx.transaction_type == 'Driver Payment'
+                row = {
                     'date': tx.date_posted.date() if hasattr(tx.date_posted, 'date') else tx.date_posted,
                     'reference': f'TX-{tx.id}',
-                    'description': tx.description or 'Expense',
+                    'description': tx.description or ('Driver service payment' if is_driver else 'Expense'),
                     'cash_in': 0.0,
                     'cash_out': float(tx.amount or 0),
                     'origin': origin,
-                    'origin_label': origin_label if recorded else 'From Accounts · Expense',
-                })
+                    'origin_label': origin_label if recorded else (
+                        'From Accounts · Driver Services' if is_driver else 'From Accounts · Expense'
+                    ),
+                }
+                if is_driver:
+                    # Same authoritative transaction, categorised so it lands in
+                    # the Daily Transaction Breakdown and expense reporting.
+                    row.update({
+                        'sort_dt': tx.date_posted,
+                        **_empty_row_meta(),
+                        'category': 'Driver / Delivery Services',
+                        'party_type': 'delivery_person',
+                    })
+                cash_out_rows.append(row)
 
     recorded_query = CashFlowEntry.query.filter(
         CashFlowEntry.is_void == False,

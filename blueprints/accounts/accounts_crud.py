@@ -250,7 +250,7 @@ def account_ledger(account_id):
     end = start + per_page
     page_rows = enriched[start:end]
 
-    types = ['Receipt', 'Refund', 'Payment', 'Transfer', 'Supplier Payment', 'Expense', 'Loss', 'Adjustment', 'Reconciliation Loss', 'Reconciliation Excess']
+    types = ['Receipt', 'Refund', 'Payment', 'Transfer', 'Supplier Payment', 'Driver Payment', 'Expense', 'Loss', 'Adjustment', 'Reconciliation Loss', 'Reconciliation Excess']
 
     return render_template('accounts/account_ledger.html', account=account, page_rows=page_rows,
                            opening_balance=opening_balance, period_in=period_in, period_out=period_out,

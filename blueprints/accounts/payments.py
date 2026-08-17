@@ -239,7 +239,7 @@ def expenditures():
         AccountTransaction.date_posted >= date_from,
         AccountTransaction.date_posted < date_to_excl,
         AccountTransaction.is_void == False,
-        AccountTransaction.transaction_type.in_(['Expense', 'Payment']),
+        AccountTransaction.transaction_type.in_(['Expense', 'Payment', 'Driver Payment']),
         AccountTransaction.from_account_id.isnot(None)
     )
     if search:
@@ -266,7 +266,8 @@ def expenditures():
         acc = Account.query.get(tx.from_account_id)
         all_expenditures.append({
             'date_posted': tx.date_posted,
-            'category': tx.description or 'Expense',
+            'category': ('Driver / Delivery Services' if tx.transaction_type == 'Driver Payment'
+                         else (tx.description or 'Expense')),
             'amount': float(tx.amount or 0),
             'method': (acc.category.capitalize() if acc else 'Other'), # Use account category as method
             'note': tx.note or '',

@@ -1445,18 +1445,26 @@ def _delivery_person_rows(person):
             continue
         amount_paid = _decimal(getattr(payment, "amount_paid", 0))
         waive = _decimal(getattr(payment, "waive_off_amount", 0))
-        ref = f"DPP-{payment.id}"
+        ref = (getattr(payment, "reference", "") or "").strip() or f"DPP-{payment.id}"
+        # The payment account is part of the driver ledger view: the same
+        # transaction is visible from the driver side and the account side.
+        pay_account = getattr(payment, "payment_account", None)
+        account_label = getattr(pay_account, "name", "") or ""
         if amount_paid > 0:
             rows.append(_row(
                 date_value=getattr(payment, "date_posted", None),
                 row_type="Payment",
                 reference=ref,
-                description="Delivery person payment",
+                description=(
+                    f"Driver service payment from {account_label}" if account_label
+                    else "Driver service payment"
+                ),
                 credit=amount_paid,
                 source_type="DeliveryPersonPayment",
                 source_id=payment.id,
                 party_id=person.id,
                 note=getattr(payment, "note", "") or "",
+                account=account_label,
                 source=payment,
             ))
         if waive > 0:
@@ -1464,7 +1472,7 @@ def _delivery_person_rows(person):
                 date_value=getattr(payment, "date_posted", None),
                 row_type="Waive-Off",
                 reference=ref,
-                description="Delivery person settlement waive-off",
+                description="Driver settlement waive-off (no cash movement)",
                 credit=waive,
                 source_type="DeliveryPersonPayment",
                 source_id=payment.id,
@@ -1547,6 +1555,21 @@ def financial_integrity_audit() -> dict:
     for payment in SupplierPayment.query.filter(SupplierPayment.is_void == False).all():
         if not Supplier.query.get(payment.supplier_id):
             issues.append({"kind": "orphan_supplier_payment", "id": payment.id, "supplier_id": payment.supplier_id})
+
+    # Driver payments must reconcile 1:1 with their authoritative account
+    # transaction.  Findings are reported, never auto-corrected.
+    try:
+        from app.services.driver_payments import reconcile_driver_payments
+        driver_report = reconcile_driver_payments()
+        if not driver_report["ok"]:
+            issues.append({
+                "kind": "driver_payment_ledger_mismatch",
+                "count": driver_report["issue_count"],
+                "legacy_unlinked_payments": driver_report["legacy_unlinked_payments"],
+                "sample": driver_report["issues"][:25],
+            })
+    except Exception:
+        pass
 
     return {
         "ok": not issues,

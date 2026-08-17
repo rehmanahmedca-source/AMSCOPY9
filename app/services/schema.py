@@ -238,6 +238,70 @@ def _ensure_delivery_person_payments_table():
         db.session.commit()
     except Exception:
         db.session.rollback()
+    _ensure_delivery_person_payment_accounting_columns()
+
+
+def _ensure_delivery_person_payment_accounting_columns():
+    """Additive upgrade linking driver payments to the authoritative ledger.
+
+    Existing rows are preserved untouched: the new columns are nullable, and the
+    minor-unit mirrors are backfilled from the legacy REAL values.  A partial
+    unique index on ``idempotency_key`` makes retried submissions race-safe at
+    the database level while leaving legacy NULL keys exempt.
+    """
+    additive = {
+        'amount_paid_minor': 'BIGINT',
+        'waive_off_minor': 'BIGINT',
+        'payment_account_id': 'INTEGER',
+        'method': 'VARCHAR(50)',
+        'reference': 'VARCHAR(50)',
+        'idempotency_key': 'VARCHAR(64)',
+        'revision': 'INTEGER DEFAULT 1',
+        'updated_by': 'VARCHAR(80)',
+        'created_at': 'DATETIME',
+        'updated_at': 'DATETIME',
+    }
+    try:
+        rows = db.session.execute(text("PRAGMA table_info('delivery_person_payment')")).fetchall()
+        existing = {r[1] for r in rows}
+        if not existing:
+            return
+        for column, sqltype in additive.items():
+            if column in existing:
+                continue
+            try:
+                db.session.execute(text(
+                    f"ALTER TABLE delivery_person_payment ADD COLUMN {column} {sqltype}"
+                ))
+            except Exception:
+                db.session.rollback()
+        db.session.execute(text(
+            "UPDATE delivery_person_payment "
+            "SET amount_paid_minor = CAST(ROUND(COALESCE(amount_paid, 0) * 100) AS INTEGER) "
+            "WHERE amount_paid_minor IS NULL"
+        ))
+        db.session.execute(text(
+            "UPDATE delivery_person_payment "
+            "SET waive_off_minor = CAST(ROUND(COALESCE(waive_off_amount, 0) * 100) AS INTEGER) "
+            "WHERE waive_off_minor IS NULL"
+        ))
+        db.session.execute(text(
+            "UPDATE delivery_person_payment SET revision = 1 WHERE revision IS NULL"
+        ))
+        db.session.execute(text(
+            "UPDATE delivery_person_payment SET created_at = date_posted WHERE created_at IS NULL"
+        ))
+        db.session.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_delivery_person_payment_idempotency_key "
+            "ON delivery_person_payment(idempotency_key) WHERE idempotency_key IS NOT NULL"
+        ))
+        db.session.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_dpp_account "
+            "ON delivery_person_payment (payment_account_id)"
+        ))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
 
 
 def _backfill_legacy_payment_discounts_to_waive_off():

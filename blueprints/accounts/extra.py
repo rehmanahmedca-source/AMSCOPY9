@@ -56,7 +56,7 @@ def audit_trail():
     rows = q.order_by(AccountTransaction.date_posted.desc(), AccountTransaction.id.desc()).paginate(
         page=page, per_page=per_page, error_out=False
     )
-    types = ['Receipt', 'Refund', 'Payment', 'Transfer', 'Supplier Payment', 'Expense', 'Loss', 'Adjustment', 'Reconciliation Loss', 'Reconciliation Excess']
+    types = ['Receipt', 'Refund', 'Payment', 'Transfer', 'Supplier Payment', 'Driver Payment', 'Expense', 'Loss', 'Adjustment', 'Reconciliation Loss', 'Reconciliation Excess']
     accounts = Account.query.order_by(Account.name.asc(), Account.id.asc()).all()
 
     audit_page = max(request.args.get('audit_page', 1, type=int) or 1, 1)

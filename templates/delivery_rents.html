@@ -201,14 +201,40 @@
                         <input type="number" step="any" min="0" name="waive_off_amount" class="form-control bg-dark text-white border-secondary" value="0">
                     </div>
                 </div>
+                <div class="row g-2 mt-1">
+                    <div class="col-6">
+                        <label class="text-white-50 small fw-bold mb-1">PAYMENT METHOD</label>
+                        <select name="method" class="form-select bg-dark text-white border-secondary rent-method">
+                            <option value="Cash">Cash</option>
+                            <option value="Bank">Bank</option>
+                            <option value="Check">Check</option>
+                            <option value="Online">Online</option>
+                        </select>
+                    </div>
+                    <div class="col-6">
+                        <label class="text-white-50 small fw-bold mb-1">PAY FROM ACCOUNT</label>
+                        <select name="payment_account_id" class="form-select bg-dark text-white border-secondary rent-account">
+                            <option value="">Select account…</option>
+                            {% for a in payment_accounts %}
+                            <option value="{{ a.id }}" data-category="{{ (a.category or '')|lower }}">[{{ (a.category or 'cash')|upper }}] {{ a.name }} (Rs. {{ "%.2f"|format(a.balance or 0) }})</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text text-white-50 small">Money leaves this account. Not required for a waive-off only.</div>
+                    </div>
+                </div>
                 <div class="mt-3">
                     <label class="text-white-50 small fw-bold mb-1">DATE</label>
                     <input type="date" name="date" class="form-control bg-dark text-white border-secondary">
                 </div>
                 <div class="mt-3">
+                    <label class="text-white-50 small fw-bold mb-1">REFERENCE (OPTIONAL)</label>
+                    <input type="text" name="reference" class="form-control bg-dark text-white border-secondary" placeholder="Voucher / slip no.">
+                </div>
+                <div class="mt-3">
                     <label class="text-white-50 small fw-bold mb-1">NOTE (OPTIONAL)</label>
                     <input type="text" name="note" class="form-control bg-dark text-white border-secondary" placeholder="Reason or remark">
                 </div>
+                <input type="hidden" name="idempotency_key" value="rent-{{ r.id }}-{{ submission_token }}">
             </div>
             <div class="modal-footer border-0">
                 <button type="submit" class="btn btn-warning text-dark fw-bold w-100 py-2 rounded-pill">Save Payment</button>
@@ -217,4 +243,33 @@
     </div>
 </div>
 {% endfor %}
+
+<script>
+// Keep the selectable account list consistent with the chosen method, and stop
+// an impatient second click from posting the same form twice.  Server-side
+// idempotency remains the real guard.
+document.querySelectorAll('#content form, form').forEach(function (form) {
+  var method = form.querySelector('.rent-method');
+  var account = form.querySelector('.rent-account');
+  if (method && account) {
+    var sync = function () {
+      var want = method.value === 'Cash' ? 'cash' : 'bank';
+      Array.prototype.forEach.call(account.options, function (opt) {
+        if (!opt.value) { return; }
+        var ok = opt.dataset.category === want;
+        opt.hidden = !ok;
+        opt.disabled = !ok;
+      });
+      var sel = account.selectedOptions[0];
+      if (sel && sel.value && sel.disabled) { account.value = ''; }
+    };
+    method.addEventListener('change', sync);
+    sync();
+  }
+  form.addEventListener('submit', function () {
+    var btn = form.querySelector('button[type="submit"]');
+    if (btn) { setTimeout(function () { btn.disabled = true; }, 0); }
+  });
+});
+</script>
 {% endblock %}

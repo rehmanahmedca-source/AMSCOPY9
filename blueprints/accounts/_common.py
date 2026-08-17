@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, or_, and_
 from sqlalchemy.exc import IntegrityError
 from types import SimpleNamespace
-from models import db, Account, AccountCategory, AccountTransaction, AccountingAuditLog, Payment, SupplierPayment, FbmCashDrawerEntry, DirectSale, GRN, GRNItem, Supplier, Client, Booking, PendingBill, BillCounter
+from models import db, Account, AccountCategory, AccountTransaction, AccountingAuditLog, Payment, SupplierPayment, FbmCashDrawerEntry, DirectSale, GRN, GRNItem, Supplier, Client, Booking, PendingBill, BillCounter, DeliveryPerson, DeliveryPersonPayment
 from utils.audit import audit_log
 
 # Module configuration

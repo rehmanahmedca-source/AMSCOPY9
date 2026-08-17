@@ -2,8 +2,10 @@
 from ._common import *  # noqa
 
 import csv
+import logging
 from io import StringIO
 from datetime import datetime
+from uuid import uuid4
 
 from app.services.financial_ledgers import (
     build_delivery_person_financial_ledger,
@@ -36,6 +38,14 @@ def _driver_page(ledger, filters):
     return rows, page, per_page, total, pages, closing
 
 
+def _driver_payment_accounts():
+    """Cash/bank accounts selectable as the explicit source of funds."""
+    return Account.query.filter(
+        func.coalesce(Account.is_active, True) == True,  # noqa: E712
+        func.lower(func.trim(Account.category)).in_(['cash', 'bank']),
+    ).order_by(Account.name.asc(), Account.id.asc()).all()
+
+
 def _render_driver_ledger(person, *, filters=None):
     filters = filters or _driver_filters()
     ledger = build_delivery_person_financial_ledger(person, **filters)
@@ -60,6 +70,8 @@ def _render_driver_ledger(person, *, filters=None):
         back_url=url_for('delivery_persons_page'),
         opening_url=url_for('delivery_person_opening_balance', id=person.id),
         today_date=pk_today().strftime('%Y-%m-%d'),
+        payment_accounts=_driver_payment_accounts(),
+        submission_token=uuid4().hex,
     )
 
 
@@ -103,165 +115,109 @@ def delivery_person_opening_balance(id):
 @bp.route('/delivery_person_ledger/<int:id>/pay', methods=['POST'])
 @login_required
 def settle_delivery_person(id):
-    """Allocate a consolidated settlement FIFO across active rent allocations."""
+    """Driver-section entry point: delegates to the shared financial core.
+
+    This is a convenience *action layer* only.  The settlement is allocated
+    FIFO across open rent items, and every allocated slice creates the same
+    authoritative AccountTransaction that the Accounts section would create.
+    """
     if not _user_can('can_manage_sales'):
         flash('Permission denied', 'danger')
         return redirect(url_for('delivery_person_ledger', id=id))
     person = DeliveryPerson.query.get_or_404(id)
+    from app.services.driver_payments import settle_driver_fifo
     try:
-        paid = max(0.0, float(request.form.get('paid_amount', 0) or 0))
-        waived = max(0.0, float(request.form.get('waive_off_amount', 0) or 0))
-    except (TypeError, ValueError):
-        paid = waived = 0.0
-    if paid + waived <= 0:
-        flash('Enter a payment or waive-off amount.', 'danger')
-        return redirect(url_for('delivery_person_ledger', id=id))
-
-    allocations = SaleDeliveryPerson.query.filter_by(
-        delivery_person_id=person.id, is_void=False
-    ).join(DirectSale, SaleDeliveryPerson.sale_id == DirectSale.id).filter(
-        DirectSale.is_void == False,
-        SaleDeliveryPerson.rent_amount > 0,
-    ).order_by(SaleDeliveryPerson.created_at.asc(), SaleDeliveryPerson.id.asc()).all()
-    remaining = paid + waived
-    created = 0
-    for alloc in allocations:
-        totals = db.session.query(
-            func.coalesce(func.sum(DeliveryPersonPayment.amount_paid), 0),
-            func.coalesce(func.sum(DeliveryPersonPayment.waive_off_amount), 0),
-        ).filter(
-            DeliveryPersonPayment.is_void == False,
-            DeliveryPersonPayment.allocation_id == alloc.id,
-        ).first()
-        due = max(0.0, float(alloc.rent_amount or 0) - float(totals[0] or 0) - float(totals[1] or 0))
-        if due <= 0:
-            continue
-        allocation_amount = min(due, remaining)
-        allocation_paid = min(paid, allocation_amount)
-        allocation_waived = allocation_amount - allocation_paid
-        db.session.add(DeliveryPersonPayment(
+        rows = settle_driver_fifo(
             delivery_person_id=person.id,
-            sale_id=alloc.sale_id,
-            allocation_id=alloc.id,
-            amount_paid=allocation_paid,
-            waive_off_amount=allocation_waived,
+            amount_paid=request.form.get('paid_amount', 0) or 0,
+            waive_off_amount=request.form.get('waive_off_amount', 0) or 0,
+            method=(request.form.get('method') or 'Cash'),
+            payment_account_id=request.form.get('payment_account_id', type=int),
+            reference=(request.form.get('reference') or '').strip(),
+            date_posted=(request.form.get('date') or '').strip(),
             note=(request.form.get('note') or '').strip(),
-            date_posted=resolve_posted_datetime(request.form.get('date')) if request.form.get('date') else pk_now(),
-            created_by=(current_user.username if current_user and current_user.is_authenticated else None),
-            is_void=False,
-        ))
-        db.session.flush()
-        created += 1
-        paid -= allocation_paid
-        waived -= allocation_waived
-        remaining -= allocation_amount
-        if remaining <= 0.0001:
-            break
-    if remaining > 0.0001:
-        # Older installations may have rent rows without a
-        # SaleDeliveryPerson allocation.  Preserve those sources and attach a
-        # settlement to the delivery person/sale without inventing an
-        # allocation id.
-        active_sale_ids = {a.sale_id for a in allocations}
-        legacy_rents = DeliveryRent.query.filter(
-            DeliveryRent.is_void == False,
-            func.lower(func.trim(DeliveryRent.delivery_person_name)) == person.name.casefold(),
-        ).order_by(DeliveryRent.date_posted.asc(), DeliveryRent.id.asc()).all()
-        for rent in legacy_rents:
-            if rent.sale_id in active_sale_ids:
-                continue
-            existing_paid, existing_waived = db.session.query(
-                func.coalesce(func.sum(DeliveryPersonPayment.amount_paid), 0),
-                func.coalesce(func.sum(DeliveryPersonPayment.waive_off_amount), 0),
-            ).filter(
-                DeliveryPersonPayment.is_void == False,
-                DeliveryPersonPayment.allocation_id.is_(None),
-                DeliveryPersonPayment.sale_id == rent.sale_id,
-                DeliveryPersonPayment.delivery_person_id == person.id,
-            ).first()
-            due = max(0.0, float(rent.amount or 0) - float(existing_paid or 0) - float(existing_waived or 0))
-            if due <= 0:
-                continue
-            allocation_amount = min(due, remaining)
-            allocation_paid = min(paid, allocation_amount)
-            allocation_waived = allocation_amount - allocation_paid
-            db.session.add(DeliveryPersonPayment(
-                delivery_person_id=person.id, sale_id=rent.sale_id, allocation_id=None,
-                amount_paid=allocation_paid, waive_off_amount=allocation_waived,
-                note=(request.form.get('note') or '').strip(),
-                date_posted=resolve_posted_datetime(request.form.get('date')) if request.form.get('date') else pk_now(),
-                created_by=(current_user.username if current_user and current_user.is_authenticated else None),
-                is_void=False,
-            ))
-            db.session.flush()
-            created += 1
-            paid -= allocation_paid
-            waived -= allocation_waived
-            remaining -= allocation_amount
-            if remaining <= 0.0001:
-                break
-    if remaining > 0.0001:
+            idempotency_key=(request.form.get('idempotency_key') or '').strip() or None,
+            actor=current_user,
+        )
+        replayed = bool(rows) and getattr(rows[0], '_idempotent_replay', False)
+        db.session.commit()
+        if replayed:
+            flash('This settlement was already recorded; no duplicate was created.', 'info')
+        else:
+            flash(f'Driver payment recorded across {len(rows)} rent item(s). '
+                  f'The cash/bank account and driver ledger were updated together.', 'success')
+    except ValueError as exc:
         db.session.rollback()
-        flash('Settlement exceeds the currently outstanding delivery-person balance.', 'danger')
-        return redirect(url_for('delivery_person_ledger', id=id))
-    db.session.commit()
-    flash(f'Delivery person settlement allocated across {created} rent item(s).', 'success')
+        flash(str(exc), 'danger')
+    except Exception as exc:
+        db.session.rollback()
+        logging.getLogger(__name__).exception('Driver settlement failed')
+        flash(f'Unable to record the driver payment: {exc}', 'danger')
     return redirect(url_for('delivery_person_ledger', id=id))
 
 
 @bp.route('/delivery_person_payments/<int:id>/edit', methods=['POST'])
 @login_required
 def edit_delivery_person_payment(id):
+    """Edit through the same core so the net delta is applied exactly once."""
     if not _user_can('can_manage_sales'):
         flash('Permission denied', 'danger')
         return redirect(url_for('delivery_persons_page'))
     payment = DeliveryPersonPayment.query.get_or_404(id)
-    if payment.is_void:
-        flash('Restore the settlement before editing it.', 'danger')
-        return redirect(url_for('delivery_person_ledger', id=payment.delivery_person_id))
+    person_id = payment.delivery_person_id
+    from app.services.driver_payments import save_driver_payment
     try:
-        paid = max(0.0, float(request.form.get('amount_paid', 0) or 0))
-        waived = max(0.0, float(request.form.get('waive_off_amount', 0) or 0))
-    except (TypeError, ValueError):
-        flash('Settlement amounts must be valid numbers.', 'danger')
-        return redirect(url_for('delivery_person_ledger', id=payment.delivery_person_id))
-    if paid + waived <= 0:
-        flash('Enter a payment or waive-off amount.', 'danger')
-        return redirect(url_for('delivery_person_ledger', id=payment.delivery_person_id))
-    if payment.allocation_id:
-        allocation = db.session.get(SaleDeliveryPerson, payment.allocation_id)
-        totals = db.session.query(
-            func.coalesce(func.sum(DeliveryPersonPayment.amount_paid), 0),
-            func.coalesce(func.sum(DeliveryPersonPayment.waive_off_amount), 0),
-        ).filter(
-            DeliveryPersonPayment.is_void == False,
-            DeliveryPersonPayment.allocation_id == payment.allocation_id,
-            DeliveryPersonPayment.id != payment.id,
-        ).first()
-        due = max(0.0, float(getattr(allocation, 'rent_amount', 0) or 0) - float(totals[0] or 0) - float(totals[1] or 0)) if allocation else 0.0
-        if paid + waived > due + 0.0001:
-            flash('Updated settlement exceeds the remaining rent amount.', 'danger')
-            return redirect(url_for('delivery_person_ledger', id=payment.delivery_person_id))
-    payment.amount_paid = paid
-    payment.waive_off_amount = waived
-    payment.note = (request.form.get('note') or '').strip()
-    payment.date_posted = resolve_posted_datetime(request.form.get('date')) if request.form.get('date') else (payment.date_posted or pk_now())
-    db.session.commit()
-    flash('Delivery person settlement updated.', 'success')
-    return redirect(url_for('delivery_person_ledger', id=payment.delivery_person_id))
+        account_raw = request.form.get('payment_account_id', type=int)
+        save_driver_payment(
+            payment_id=payment.id,
+            delivery_person_id=person_id,
+            amount_paid=request.form.get('amount_paid', 0) or 0,
+            waive_off_amount=request.form.get('waive_off_amount', 0) or 0,
+            method=(request.form.get('method') or payment.method or 'Cash'),
+            payment_account_id=(account_raw if account_raw else payment.payment_account_id),
+            allocation_id=payment.allocation_id,
+            reference=(request.form.get('reference') or payment.reference or '').strip(),
+            date_posted=(request.form.get('date') or '').strip(),
+            note=(request.form.get('note') or '').strip(),
+            expected_revision=request.form.get('expected_revision'),
+            actor=current_user,
+        )
+        db.session.commit()
+        flash('Driver payment updated. Balances were adjusted by the difference only.', 'success')
+    except ValueError as exc:
+        db.session.rollback()
+        flash(str(exc), 'danger')
+    except Exception as exc:
+        db.session.rollback()
+        logging.getLogger(__name__).exception('Driver payment edit failed')
+        flash(f'Unable to update the driver payment: {exc}', 'danger')
+    return redirect(url_for('delivery_person_ledger', id=person_id))
 
 
 @bp.route('/delivery_person_payments/<int:id>/void', methods=['POST'])
 @login_required
 def void_delivery_person_payment(id):
+    """Controlled reversal: restores the account balance and driver payable once."""
     if not _user_can('can_manage_sales'):
         flash('Permission denied', 'danger')
         return redirect(url_for('delivery_persons_page'))
     payment = DeliveryPersonPayment.query.get_or_404(id)
-    payment.is_void = True
-    db.session.commit()
-    flash('Delivery person settlement reversed; history was preserved.', 'success')
-    return redirect(url_for('delivery_person_ledger', id=payment.delivery_person_id))
+    person_id = payment.delivery_person_id
+    from app.services.driver_payments import delete_driver_payment
+    try:
+        if delete_driver_payment(payment, actor=current_user):
+            db.session.commit()
+            flash('Driver payment reversed. The account balance was restored and history preserved.', 'success')
+        else:
+            flash('This driver payment is already reversed.', 'warning')
+    except ValueError as exc:
+        db.session.rollback()
+        flash(str(exc), 'danger')
+    except Exception as exc:
+        db.session.rollback()
+        logging.getLogger(__name__).exception('Driver payment reversal failed')
+        flash(f'Unable to reverse the driver payment: {exc}', 'danger')
+    return redirect(url_for('delivery_person_ledger', id=person_id))
 
 
 @bp.route('/delivery_person_payments/<int:id>/restore', methods=['POST'])
@@ -271,25 +227,22 @@ def restore_delivery_person_payment(id):
         flash('Permission denied', 'danger')
         return redirect(url_for('delivery_persons_page'))
     payment = DeliveryPersonPayment.query.get_or_404(id)
-    if not payment.is_void:
-        flash('Settlement is already active.', 'warning')
-        return redirect(url_for('delivery_person_ledger', id=payment.delivery_person_id))
-    if payment.allocation_id:
-        allocation = db.session.get(SaleDeliveryPerson, payment.allocation_id)
-        other_paid, other_waived = db.session.query(
-            func.coalesce(func.sum(DeliveryPersonPayment.amount_paid), 0),
-            func.coalesce(func.sum(DeliveryPersonPayment.waive_off_amount), 0),
-        ).filter(
-            DeliveryPersonPayment.is_void == False,
-            DeliveryPersonPayment.allocation_id == payment.allocation_id,
-        ).first()
-        if allocation and float(other_paid or 0) + float(other_waived or 0) + float(payment.amount_paid or 0) + float(payment.waive_off_amount or 0) > float(allocation.rent_amount or 0) + 0.0001:
-            flash('Settlement cannot be restored because the allocation is already settled by another row.', 'danger')
-            return redirect(url_for('delivery_person_ledger', id=payment.delivery_person_id))
-    payment.is_void = False
-    db.session.commit()
-    flash('Delivery person settlement restored.', 'success')
-    return redirect(url_for('delivery_person_ledger', id=payment.delivery_person_id))
+    person_id = payment.delivery_person_id
+    from app.services.driver_payments import restore_driver_payment
+    try:
+        if restore_driver_payment(payment, actor=current_user):
+            db.session.commit()
+            flash('Driver payment restored. The account effect was re-applied once.', 'success')
+        else:
+            flash('This driver payment is already active.', 'warning')
+    except ValueError as exc:
+        db.session.rollback()
+        flash(str(exc), 'danger')
+    except Exception as exc:
+        db.session.rollback()
+        logging.getLogger(__name__).exception('Driver payment restore failed')
+        flash(f'Unable to restore the driver payment: {exc}', 'danger')
+    return redirect(url_for('delivery_person_ledger', id=person_id))
 
 
 @bp.route('/download_delivery_person_ledger/<int:id>')

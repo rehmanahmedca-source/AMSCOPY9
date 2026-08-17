@@ -100,7 +100,7 @@ def api_expenditures_today():
         AccountTransaction.date_posted >= today,
         AccountTransaction.date_posted < today + timedelta(days=1),
         AccountTransaction.is_void == False,
-        AccountTransaction.transaction_type.in_(['Expense', 'Payment']),
+        AccountTransaction.transaction_type.in_(['Expense', 'Payment', 'Driver Payment']),
         AccountTransaction.transaction_type != 'Supplier Payment',
         AccountTransaction.to_account_id.isnot(None)
     ).all()
@@ -389,7 +389,7 @@ def kpi_expenditures():
         AccountTransaction.date_posted >= date_from,
         AccountTransaction.date_posted < date_to_excl,
         AccountTransaction.is_void == False,
-        AccountTransaction.transaction_type.in_(['Expense', 'Payment']),
+        AccountTransaction.transaction_type.in_(['Expense', 'Payment', 'Driver Payment']),
         AccountTransaction.transaction_type != 'Supplier Payment',
         AccountTransaction.from_account_id.isnot(None)
     ).all()
@@ -405,7 +405,8 @@ def kpi_expenditures():
             continue
         items.append({
             'date_posted': tx.date_posted,
-            'category': tx.description or 'Expense',
+            'category': ('Driver / Delivery Services' if tx.transaction_type == 'Driver Payment'
+                         else (tx.description or 'Expense')),
             'amount': float(tx.amount or 0),
             'method': method,
             'note': tx.note or '',

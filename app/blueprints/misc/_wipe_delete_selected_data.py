@@ -71,6 +71,27 @@ def delete_selected_data():
     def _tq(model):
         return model.query
 
+    def _purge_driver_payment_ledger(payment_query):
+        """Remove the linked account rows with their driver payments.
+
+        A driver payment owns exactly one authoritative AccountTransaction.
+        Deleting the source without the ledger row would leave an orphan money-out
+        entry and permanently skew the account balance, so both go together and
+        the balance effect is reversed first.
+        """
+        from app.services.accounting import _void_account_tx
+        ids = [row[0] for row in payment_query.with_entities(DeliveryPersonPayment.id).all()]
+        if not ids:
+            return
+        linked = AccountTransaction.query.filter(
+            AccountTransaction.source_type == 'DeliveryPersonPayment',
+            AccountTransaction.source_id.in_(ids),
+        ).all()
+        for tx in linked:
+            _void_account_tx(tx)  # restore the account balance before removal
+            db.session.delete(tx)
+        db.session.flush()
+
     forbidden_targets = {
         'clients',
         'materials',
@@ -196,12 +217,14 @@ def delete_selected_data():
                 row[0] for row in _tq(DirectSale).with_entities(DirectSale.invoice_id)
                 .filter(DirectSale.invoice_id.isnot(None)).distinct().all()
             ]
-            _tq(DeliveryPersonPayment).filter(
+            _dpp_sale_scope = _tq(DeliveryPersonPayment).filter(
                 or_(
                     DeliveryPersonPayment.sale_id.isnot(None),
                     DeliveryPersonPayment.allocation_id.isnot(None)
                 )
-            ).delete(synchronize_session=False)
+            )
+            _purge_driver_payment_ledger(_dpp_sale_scope)
+            _dpp_sale_scope.delete(synchronize_session=False)
             _tq(DeliveryRent).delete()
             _tq(SaleDeliveryPerson).delete()
             _tq(DirectSaleItem).delete()
@@ -231,12 +254,14 @@ def delete_selected_data():
             deleted_info.append('Payments')
 
         if 'delivery_rents' in targets:
+            _purge_driver_payment_ledger(_tq(DeliveryPersonPayment))
             _tq(DeliveryPersonPayment).delete()
             _tq(DeliveryRent).delete()
             _tq(SaleDeliveryPerson).delete()
             deleted_info.append('Delivery Rents')
 
         if 'delivery_persons' in targets:
+            _purge_driver_payment_ledger(_tq(DeliveryPersonPayment))
             _tq(DeliveryPersonPayment).delete()
             _tq(SaleDeliveryPerson).delete()
             _tq(DeliveryPerson).delete()
@@ -293,6 +318,7 @@ def delete_selected_data():
             deleted_info.append('Cash Drawer Categories')
 
         if 'delivery_person_payments' in targets:
+            _purge_driver_payment_ledger(_tq(DeliveryPersonPayment))
             _tq(DeliveryPersonPayment).delete()
             deleted_info.append('Driver Payments')
 

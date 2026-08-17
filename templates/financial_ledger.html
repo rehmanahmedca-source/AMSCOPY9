@@ -36,7 +36,7 @@
     {% endif %}
     {% if is_client %}<a class="btn btn-outline-success" href="{{ url_for('accounts.client_payments', client=entity.code or entity.name) }}"><i class="bi bi-cash-stack me-1"></i>Payments</a>{% endif %}
     {% if is_supplier %}<a class="btn btn-outline-info" href="{{ url_for('accounts.supplier_payments', supplier=entity.id) }}"><i class="bi bi-cash-stack me-1"></i>Payments</a>{% endif %}
-    {% if is_driver %}<a class="btn btn-outline-info" href="{{ url_for('delivery_rents_page', driver=entity.name) }}"><i class="bi bi-truck me-1"></i>Delivery rents</a><button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#driverSettlementModal"><i class="bi bi-cash-stack me-1"></i>Record settlement</button>{% endif %}
+    {% if is_driver %}<a class="btn btn-outline-info" href="{{ url_for('delivery_rents_page', driver=entity.name) }}"><i class="bi bi-truck me-1"></i>Delivery rents</a><button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#driverSettlementModal"><i class="bi bi-cash-stack me-1"></i>Pay driver</button>{% endif %}
     {% if opening_url %}<button class="btn btn-outline-info" data-bs-toggle="modal" data-bs-target="#openingBalanceModal"><i class="bi bi-wallet2 me-1"></i>Opening balance</button>{% endif %}
     <a class="btn btn-outline-light" href="{{ back_url }}">Back</a>
   </div>
@@ -128,9 +128,155 @@
 
 {% if is_driver %}
 {% for row in rows if row.source_type == 'DeliveryPersonPayment' and row.source_id and row.source and not row.source.is_void and (row.type == 'Payment' or (row.type == 'Waive-Off' and not row.source.amount_paid)) %}
-<div class="modal fade" id="editDriverPayment{{ row.source_id }}" tabindex="-1" aria-hidden="true"><div class="modal-dialog"><form class="modal-content border-secondary" style="background:#1e293b" method="POST" action="{{ url_for('edit_delivery_person_payment', id=row.source_id) }}"><div class="modal-header border-0"><h5 class="text-warning">Edit delivery settlement</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body"><label class="text-white-50 small">Paid amount</label><input type="number" min="0" step="0.01" name="amount_paid" value="{{ '%.2f'|format(row.source.amount_paid or 0) }}" class="form-control bg-dark text-white border-secondary" required><label class="text-white-50 small mt-3">Waive-off / adjustment</label><input type="number" min="0" step="0.01" name="waive_off_amount" value="{{ '%.2f'|format(row.source.waive_off_amount or 0) }}" class="form-control bg-dark text-white border-secondary"><label class="text-white-50 small mt-3">Date</label><input type="date" name="date" value="{{ row.source.date_posted.strftime('%Y-%m-%d') if row.source.date_posted else today_date }}" class="form-control bg-dark text-white border-secondary"><label class="text-white-50 small mt-3">Note</label><textarea name="note" rows="2" class="form-control bg-dark text-white border-secondary">{{ row.source.note or '' }}</textarea></div><div class="modal-footer border-0"><button class="btn btn-warning text-dark fw-bold w-100">Update settlement</button></div></form></div></div>
+<div class="modal fade" id="editDriverPayment{{ row.source_id }}" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <form class="modal-content border-secondary" style="background:#1e293b" method="POST" action="{{ url_for('edit_delivery_person_payment', id=row.source_id) }}" data-driver-edit-form>
+      <div class="modal-header border-0">
+        <h5 class="text-warning mb-0">Edit driver payment</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-dark border-secondary small mb-3">
+          Editing applies only the <strong>difference</strong> to the account balance — the original amount is never counted twice.
+        </div>
+        <div class="row g-3">
+          <div class="col-6">
+            <label class="text-white-50 small fw-bold">Amount paid</label>
+            <input type="number" min="0" step="0.01" name="amount_paid" value="{{ '%.2f'|format(row.source.amount_paid or 0) }}" class="form-control bg-dark text-white border-secondary" required>
+          </div>
+          <div class="col-6">
+            <label class="text-white-50 small fw-bold">Waive-off / adjustment</label>
+            <input type="number" min="0" step="0.01" name="waive_off_amount" value="{{ '%.2f'|format(row.source.waive_off_amount or 0) }}" class="form-control bg-dark text-white border-secondary">
+          </div>
+          <div class="col-6">
+            <label class="text-white-50 small fw-bold">Payment method</label>
+            <select name="method" class="form-select bg-dark text-white border-secondary" data-driver-method>
+              {% for m in ['Cash', 'Bank', 'Check', 'Online'] %}
+              <option value="{{ m }}" {{ 'selected' if (row.source.method or 'Cash') == m }}>{{ m }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-6">
+            <label class="text-white-50 small fw-bold">Payment account</label>
+            <select name="payment_account_id" class="form-select bg-dark text-white border-secondary" data-driver-account>
+              <option value="">Select account…</option>
+              {% for a in payment_accounts %}
+              <option value="{{ a.id }}" data-category="{{ (a.category or '')|lower }}" {{ 'selected' if row.source.payment_account_id == a.id }}>[{{ (a.category or 'cash')|upper }}] {{ a.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-6">
+            <label class="text-white-50 small fw-bold">Date</label>
+            <input type="date" name="date" value="{{ row.source.date_posted.strftime('%Y-%m-%d') if row.source.date_posted else today_date }}" class="form-control bg-dark text-white border-secondary">
+          </div>
+          <div class="col-6">
+            <label class="text-white-50 small fw-bold">Reference</label>
+            <input type="text" name="reference" value="{{ row.source.reference or '' }}" class="form-control bg-dark text-white border-secondary">
+          </div>
+          <div class="col-12">
+            <label class="text-white-50 small fw-bold">Description / notes</label>
+            <textarea name="note" rows="2" class="form-control bg-dark text-white border-secondary">{{ row.source.note or '' }}</textarea>
+          </div>
+        </div>
+        <input type="hidden" name="expected_revision" value="{{ row.source.revision or 1 }}">
+      </div>
+      <div class="modal-footer border-0">
+        <button class="btn btn-warning text-dark fw-bold w-100">Update payment</button>
+      </div>
+    </form>
+  </div>
+</div>
 {% endfor %}
-<div class="modal fade" id="driverSettlementModal" tabindex="-1" aria-hidden="true"><div class="modal-dialog"><form class="modal-content border-secondary" style="background:#1e293b" method="POST" action="{{ url_for('settle_delivery_person', id=entity.id) }}"><div class="modal-header border-0"><h5 class="text-success">Record delivery person settlement</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="text-white-50 small mb-3">Current due: <strong class="text-warning">Rs. {{ "{:,.2f}".format(ledger.closing_balance or 0) }}</strong>. The service allocates this across open rent items FIFO.</div><label class="text-white-50 small">Paid amount</label><input type="number" min="0" step="0.01" name="paid_amount" value="0" class="form-control bg-dark text-white border-secondary" required><label class="text-white-50 small mt-3">Waive-off / adjustment</label><input type="number" min="0" step="0.01" name="waive_off_amount" value="0" class="form-control bg-dark text-white border-secondary"><label class="text-white-50 small mt-3">Date</label><input type="date" name="date" class="form-control bg-dark text-white border-secondary" value="{{ today_date or '' }}"><label class="text-white-50 small mt-3">Note</label><textarea name="note" rows="2" class="form-control bg-dark text-white border-secondary"></textarea></div><div class="modal-footer border-0"><button class="btn btn-success fw-bold w-100">Save settlement</button></div></form></div></div>
+<div class="modal fade" id="driverSettlementModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <form class="modal-content border-secondary" style="background:#1e293b" method="POST" action="{{ url_for('settle_delivery_person', id=entity.id) }}" data-driver-pay-form>
+      <div class="modal-header border-0">
+        <h5 class="text-success mb-0"><i class="bi bi-cash-stack me-2"></i>Pay driver</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-dark border-secondary small mb-3">
+          Outstanding to {{ entity.name }}: <strong class="text-warning">Rs. {{ "{:,.2f}".format(ledger.closing_balance or 0) }}</strong>.
+          The amount is allocated FIFO across open rent items, and the selected account is reduced by the same amount.
+        </div>
+        <div class="row g-3">
+          <div class="col-6">
+            <label class="text-white-50 small fw-bold">Amount paid</label>
+            <input type="number" min="0" step="0.01" name="paid_amount" value="0" class="form-control bg-dark text-white border-secondary" required>
+          </div>
+          <div class="col-6">
+            <label class="text-white-50 small fw-bold">Waive-off / adjustment</label>
+            <input type="number" min="0" step="0.01" name="waive_off_amount" value="0" class="form-control bg-dark text-white border-secondary">
+            <div class="form-text text-white-50 small">No cash movement.</div>
+          </div>
+          <div class="col-6">
+            <label class="text-white-50 small fw-bold">Payment method</label>
+            <select name="method" class="form-select bg-dark text-white border-secondary" data-driver-method>
+              <option value="Cash">Cash</option>
+              <option value="Bank">Bank</option>
+              <option value="Check">Check</option>
+              <option value="Online">Online</option>
+            </select>
+          </div>
+          <div class="col-6">
+            <label class="text-white-50 small fw-bold">Payment account</label>
+            <select name="payment_account_id" class="form-select bg-dark text-white border-secondary" data-driver-account>
+              <option value="">Select account…</option>
+              {% for a in payment_accounts %}
+              <option value="{{ a.id }}" data-category="{{ (a.category or '')|lower }}">[{{ (a.category or 'cash')|upper }}] {{ a.name }} (Rs. {{ "{:,.2f}".format(a.balance or 0) }})</option>
+              {% endfor %}
+            </select>
+            <div class="form-text text-white-50 small">This account receives the money-out effect.</div>
+          </div>
+          <div class="col-6">
+            <label class="text-white-50 small fw-bold">Date</label>
+            <input type="date" name="date" class="form-control bg-dark text-white border-secondary" value="{{ today_date or '' }}">
+          </div>
+          <div class="col-6">
+            <label class="text-white-50 small fw-bold">Reference</label>
+            <input type="text" name="reference" class="form-control bg-dark text-white border-secondary" placeholder="Voucher / slip no.">
+          </div>
+          <div class="col-12">
+            <label class="text-white-50 small fw-bold">Description / notes</label>
+            <textarea name="note" rows="2" class="form-control bg-dark text-white border-secondary" placeholder="e.g. Delivery service payment"></textarea>
+          </div>
+        </div>
+        <input type="hidden" name="idempotency_key" value="driver-{{ entity.id }}-{{ submission_token }}">
+      </div>
+      <div class="modal-footer border-0">
+        <button class="btn btn-success fw-bold w-100">Save payment</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+// Method/account consistency + double-submit guard.  The server-side
+// idempotency key is the authoritative duplicate protection.
+document.querySelectorAll('[data-driver-pay-form], [data-driver-edit-form]').forEach(function (form) {
+  var method = form.querySelector('[data-driver-method]');
+  var account = form.querySelector('[data-driver-account]');
+  if (method && account) {
+    var sync = function () {
+      var want = method.value === 'Cash' ? 'cash' : 'bank';
+      Array.prototype.forEach.call(account.options, function (opt) {
+        if (!opt.value) { return; }
+        var ok = opt.dataset.category === want;
+        opt.hidden = !ok;
+        opt.disabled = !ok;
+      });
+      var sel = account.selectedOptions[0];
+      if (sel && sel.value && sel.disabled) { account.value = ''; }
+    };
+    method.addEventListener('change', sync);
+    sync();
+  }
+  form.addEventListener('submit', function () {
+    var btn = form.querySelector('button[type="submit"], .modal-footer button');
+    if (btn) { setTimeout(function () { btn.disabled = true; }, 0); }
+  });
+});
+</script>
 {% endif %}
 
 {% if opening_url %}

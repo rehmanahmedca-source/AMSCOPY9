@@ -135,7 +135,7 @@ def _cash_flow_net_between(start_date=None, end_date=None):
 
     account_txs = AccountTransaction.query.filter(
         AccountTransaction.is_void == False,
-        AccountTransaction.transaction_type.in_(['Expense', 'Payment', 'Transfer']),
+        AccountTransaction.transaction_type.in_(['Expense', 'Payment', 'Driver Payment', 'Transfer']),
         *_date_filters(AccountTransaction.date_posted)
     ).all()
     account_cache = {}
@@ -164,7 +164,7 @@ def _cash_flow_net_between(start_date=None, end_date=None):
             if acc and (acc.category or '').lower() in ('cash', 'bank'):
                 account_in += amount
             continue
-        if tx.transaction_type in ['Expense', 'Payment'] and tx.from_account_id is not None:
+        if tx.transaction_type in ['Expense', 'Payment', 'Driver Payment'] and tx.from_account_id is not None:
             if tx.from_account_id not in account_cache:
                 account_cache[tx.from_account_id] = Account.query.get(tx.from_account_id)
             acc = account_cache.get(tx.from_account_id)
@@ -230,7 +230,7 @@ def _cash_flow_in_out_between(start_date, end_date):
     account_cache = {}
     for tx in AccountTransaction.query.filter(
         AccountTransaction.is_void == False,
-        AccountTransaction.transaction_type.in_(['Expense', 'Payment', 'Transfer', 'Receipt']),
+        AccountTransaction.transaction_type.in_(['Expense', 'Payment', 'Driver Payment', 'Transfer', 'Receipt']),
         *_date_filters(AccountTransaction.date_posted)
     ).all():
         amount = float(tx.amount or 0)
@@ -256,7 +256,7 @@ def _cash_flow_in_out_between(start_date, end_date):
             if acc and (acc.category or '').lower() in ('cash', 'bank'):
                 cash_in += amount
             continue
-        if tx.transaction_type in ['Expense', 'Payment'] and tx.from_account_id is not None:
+        if tx.transaction_type in ['Expense', 'Payment', 'Driver Payment'] and tx.from_account_id is not None:
             if tx.from_account_id not in account_cache:
                 account_cache[tx.from_account_id] = Account.query.get(tx.from_account_id)
             acc = account_cache.get(tx.from_account_id)

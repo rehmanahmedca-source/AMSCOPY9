@@ -834,3 +834,110 @@ html[data-theme="light"] {
         white-space: nowrap;
     }
 }
+
+/* ============================================================
+   Direct Sales — refined table + responsive card fallback
+   ------------------------------------------------------------
+   Desktop: sticky column header, tabular numeric alignment and a
+   dedicated, truncated Notes column.
+   Mobile (<768px): the fixed table collapses into stacked, key-value
+   entry cards (data-label captions) so no horizontal scrolling is
+   needed on phones.
+   ============================================================ */
+
+/* Sticky column header so the labels stay visible while scrolling. */
+.ds-sales-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: var(--ui-surface-2);
+}
+
+/* Alignment helpers — text left, numbers right, ids/status/actions centred. */
+.ds-sales-table th.text-end,
+.ds-sales-table td.text-end {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+.ds-sales-table th.text-center,
+.ds-sales-table td.text-center {
+    text-align: center;
+}
+
+/* Notes column: single-line, truncated with an ellipsis; full text on hover. */
+.ds-note {
+    display: inline-block;
+    max-width: 20ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: bottom;
+    color: var(--ui-text-soft);
+    font-style: italic;
+    cursor: help;
+}
+
+/* Mobile card fallback (< 768px) */
+@media (max-width: 767.98px) {
+    .ds-table-card .table-responsive { overflow: visible; }
+    .ds-sales-table { min-width: 0; width: 100%; }
+    .ds-sales-table thead { display: none; }
+    .ds-sales-table,
+    .ds-sales-table tbody,
+    .ds-sales-table tr,
+    .ds-sales-table td { display: block; width: 100%; min-width: 0; max-width: 100%; }
+    .ds-sales-table tbody tr {
+        margin-bottom: 0.9rem;
+        border: 1px solid var(--ui-border-strong);
+        border-radius: 12px;
+        background: var(--ui-surface-2);
+        box-shadow: var(--ui-shadow-1);
+        padding: 0.35rem 0;
+    }
+    .ds-sales-table tbody tr:hover { background: var(--ui-surface-2); }
+    .ds-sales-table tbody tr.ds-row-void { text-decoration: none; }
+    .ds-sales-table td {
+        padding: 0.5rem 0.9rem;
+        border: 0;
+        border-bottom: 1px solid var(--ui-border);
+        text-align: left !important;
+        white-space: normal;
+        overflow: visible;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        text-overflow: clip;
+    }
+    .ds-sales-table td:last-child { border-bottom: 0; }
+    .ds-sales-table td::before {
+        content: attr(data-label);
+        display: block;
+        font-size: 0.66rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--ui-text-muted);
+        margin-bottom: 0.18rem;
+    }
+    /* Bill No / System Ref / Status are the most important signals — tint
+       their captions with the accent colour so they read as the card header. */
+    .ds-sales-table td[data-label="Bill No."]::before,
+    .ds-sales-table td[data-label="System Ref"]::before,
+    .ds-sales-table td[data-label="Status"]::before { color: var(--ui-accent); }
+    .ds-sales-table td[data-label="Total Amount"] { font-size: 1.05rem; }
+    /* Action buttons sit at the bottom of each card and wrap neatly. */
+    .ds-sales-table td[data-label="Actions"] {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+    }
+    .ds-sales-table td[data-label="Actions"]::before { width: 100%; }
+    .ds-sales-table td[data-label="Actions"] form { margin: 0; }
+    /* In cards, show the full note instead of truncating. */
+    .ds-note {
+        max-width: 100%;
+        white-space: normal;
+        overflow: visible;
+        text-overflow: clip;
+    }
+}

@@ -382,7 +382,7 @@ def edit_grn(id):
         flash('GRN updated successfully', 'success')
         return redirect(url_for('grn'))
 
-    grns = GRN.query.order_by(GRN.date_posted.desc()).all()
+    grns = GRN.query.options(selectinload(GRN.items)).order_by(GRN.date_posted.desc()).all()
     materials = Material.query.order_by(Material.name.asc()).all()
     clients = Client.query.filter_by(is_active=True).order_by(Client.name.asc()).all()
     suppliers_list = Supplier.query.filter_by(is_active=True).order_by(Supplier.name.asc()).all()

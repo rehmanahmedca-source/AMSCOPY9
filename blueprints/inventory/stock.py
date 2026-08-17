@@ -127,6 +127,12 @@ def stock_summary():
     grand_delivered = float(sum(r['delivered'] for r in totals_by_material))
     grand_net = grand_received - grand_delivered
 
+    # GRN incoming-history: every stock-IN movement in the range that traces
+    # back to an active GRN (authoritative ledger — entry rows are created by
+    # the GRN save; GRN is the source document).  Customer returns and manual
+    # IN entries are separate and stay visible in the Received totals above.
+    grn_receipts = _grn_receipt_history(date_from, date_to, material_filter)
+
     categories = MaterialCategory.query.order_by(MaterialCategory.name.asc()).all()
     materials = Material.query.order_by(Material.name.asc()).all()
     return render_template(
@@ -141,9 +147,52 @@ def stock_summary():
         material_filter=material_filter,
         totals_by_material=totals_by_material,
         day_wise=day_wise,
+        grn_receipts=grn_receipts,
         grand_received=grand_received,
         grand_delivered=grand_delivered,
         grand_net=grand_net
     )
+
+
+def _grn_receipt_history(date_from, date_to, material_filter=''):
+    """GRN stock-in movements for the range, with the source GRN document.
+
+    One authoritative pass over the entry ledger (IN, non-void) joined to the
+    GRN master by auto bill number, so every row is traceable to a GRN
+    (bill no + supplier) rather than appearing as an anonymous "added qty".
+    """
+    in_rows = Entry.query.filter(
+        Entry.is_void == False,
+        Entry.type == 'IN',
+        Entry.date >= date_from,
+        Entry.date <= date_to,
+        Entry.auto_bill_no.isnot(None),
+    )
+    if material_filter:
+        in_rows = in_rows.filter(Entry.material == material_filter)
+    in_rows = in_rows.with_entities(
+        Entry.date, Entry.material, Entry.qty, Entry.auto_bill_no, Entry.bill_no
+    ).all()
+
+    grn_map = {}
+    for g in GRN.query.filter(GRN.is_void == False).with_entities(
+            GRN.auto_bill_no, GRN.manual_bill_no, GRN.supplier).all():
+        ab = (g.auto_bill_no or '').strip()
+        if ab:
+            grn_map[ab] = {'bill': g.manual_bill_no or ab, 'supplier': g.supplier or ''}
+
+    receipts = []
+    for row in in_rows:
+        info = grn_map.get((row.auto_bill_no or '').strip())
+        if not info:
+            continue
+        receipts.append({
+            'date': row.date,
+            'bill_no': info['bill'],
+            'supplier': info['supplier'],
+            'material': row.material,
+            'qty': float(row.qty or 0),
+        })
+    return receipts
 
 

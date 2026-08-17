@@ -12,6 +12,7 @@ tools/migrate/
   02_build_clean_export.py        build the purge-cleaned, import-ready xlsx
   03_verify_clean_export.py       prove the clean workbook is leak-free (gate 2)
   04_run_post_import_audit.py     run the SQL audit against the migrated DB (gate 3)
+  05_load_app_db.py               load the clean export into the app DB (--confirm)
   post_import_audit.sql           the SQL verification checklist (readable form)
   post_import_enrichment.sql      derived-column backfills + hardening after import
 ```
@@ -43,14 +44,15 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
 
 ### 4) Load into the fresh application database
 
-Two equivalent options:
-
-* **App UI (recommended):** Import & Export → Full Raw Import → choose the
+* **Scripted (recommended, what was executed):**
+  ```bash
+  .venv/bin/python tools/migrate/05_load_app_db.py --confirm
+  #   → backs up DB, runs the app's own full-raw importer with the clean file,
+  #     backfills client_code, applies post_import_enrichment.sql
+  ```
+* **App UI (equivalent):** Import & Export → Full Raw Import → choose the
   `ALLEXPORT-CLEAN-<timestamp>.xlsx` file, mode *replace tenant data*.  This is
-  the exact code path the app uses (verified: 24,054 rows, 0 failures).
-* **Scripted:** point `tools/realdata_migration.py` at the clean file (the
-  script accepts an optional `--source` via the `MIGRATION_XLSX` environment
-  variable or by editing its `XLSX` constant) on a fresh DB.
+  the exact code path the script drives (verified: 24,054 rows, 0 failures).
 
 Do **not** load the original `ALLEXPORT-14-08-2026_05-51PM.xlsx` — it contains
 11,663 rows that must never be transferred (see `MIGRATION_PLAN.md`).

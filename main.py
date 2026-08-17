@@ -38,7 +38,7 @@ WEBHOOK_TOKEN = "PakistanZindabad1947-2026"
 # Example:
 # /var/www/tempservofbm_pythonanywhere_com_wsgi.py
 #
-WSGI_FILE = ""
+WSGI_FILE = "/var/www/tempservofbm_pythonanywhere_com_wsgi.py"
 
 
 # ============================================================

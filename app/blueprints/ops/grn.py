@@ -9,6 +9,10 @@ def grn():
         action = request.form.get('action')
 
         if action == 'add':
+            _t0 = time.time()
+            logger = logging.getLogger('grn')
+            _actor = getattr(current_user, 'username', None) or 'anon'
+            logger.info('GRN_CREATE_START action=add user=%s', _actor)
             supplier_input = request.form.get('supplier', '').strip()
             supplier_id = request.form.get('supplier_id')
             
@@ -155,33 +159,62 @@ def grn():
             prices = request.form.getlist('price[]')
 
             for name, qty, price in zip(mat_names, qtys, prices):
-                if name and qty:
-                    qty_val = float(qty)
-                    price_val = float(price) if price else 0
-                    item = GRNItem(grn_id=new_grn.id, mat_name=name, qty=qty_val, price_at_time=price_val)
-                    db.session.add(item)
-
-                    mat = Material.query.filter_by(name=name).first()
-                    if mat:
-                        mat.total += qty_val
-
-                    entry = Entry(
-                        date=date_posted.strftime('%Y-%m-%d'),
-                        time=date_posted.strftime('%H:%M:%S'),
-                        type='IN',
-                        material=name,
-                        client=supplier_name,
-                        qty=qty_val,
-                        bill_no=manual_bill or '',
-                        auto_bill_no=auto_bill,
-                        created_by=current_user.username,
-                        note=note
+                if not name:
+                    continue
+                try:
+                    qty_val = float(qty or 0)
+                except (TypeError, ValueError):
+                    qty_val = 0.0
+                # Server-side inventory guard: zero/negative received
+                # quantities must never create a stock movement (mirrors the
+                # direct-sale rule qty <= 0 => skip).
+                if qty_val <= 0:
+                    logger.warning(
+                        'GRN_ITEM_SKIPPED_INVALID_QTY mat=%s qty=%r user=%s',
+                        name, qty, _actor,
                     )
-                    db.session.add(entry)
+                    continue
+                price_val = float(price) if price else 0
+                item = GRNItem(grn_id=new_grn.id, mat_name=name, qty=qty_val, price_at_time=price_val)
+                db.session.add(item)
+
+                mat = Material.query.filter_by(name=name).first()
+                if mat:
+                    mat.total += qty_val
+
+                entry = Entry(
+                    date=date_posted.strftime('%Y-%m-%d'),
+                    time=date_posted.strftime('%H:%M:%S'),
+                    type='IN',
+                    material=name,
+                    client=supplier_name,
+                    qty=qty_val,
+                    bill_no=manual_bill or '',
+                    auto_bill_no=auto_bill,
+                    created_by=current_user.username,
+                    note=note
+                )
+                db.session.add(entry)
 
             _sync_grn_auto_supplier_payment(new_grn)
 
-            db.session.commit()
+            try:
+                db.session.commit()
+            except IntegrityError as _dup:
+                # DB-level duplicate-submission guard (uq_grn_manual_bill_no):
+                # the same manual bill posted twice (double click / retry /
+                # refresh) must not create a second GRN or stock movement.
+                db.session.rollback()
+                logger.warning(
+                    'GRN_DUPLICATE_REJECTED manual_bill=%s user=%s elapsed_ms=%.1f',
+                    manual_bill, _actor, (time.time() - _t0) * 1000.0,
+                )
+                flash('GRN not saved: this bill number was already received (duplicate submission ignored).', 'danger')
+                return redirect(url_for('grn'))
+            logger.info(
+                'GRN_COMMIT id=%s bill=%s items=%d elapsed_ms=%.1f',
+                new_grn.id, auto_bill, len(mat_names), (time.time() - _t0) * 1000.0,
+            )
             flash('GRN added successfully!', 'success')
 
         elif action == 'delete':
@@ -224,9 +257,9 @@ def grn():
         query = query.filter(func.date(GRN.date_posted) <= end_date)
     
     if sort_by == 'supplier':
-        grns = query.order_by(GRN.supplier.asc()).all()
+        grns = query.options(selectinload(GRN.items)).order_by(GRN.supplier.asc()).all()
     else:
-        grns = query.order_by(GRN.date_posted.desc()).all()
+        grns = query.options(selectinload(GRN.items)).order_by(GRN.date_posted.desc()).all()
 
     materials = Material.query.filter_by(is_active=True).order_by(Material.name.asc()).all()
     clients = Client.query.filter_by(is_active=True).order_by(Client.name.asc()).all()

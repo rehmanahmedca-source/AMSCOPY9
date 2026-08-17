@@ -249,7 +249,14 @@ def _max_used_auto_bill_seq(namespace=AUTO_BILL_NS_DEFAULT):
     for model, col, source_ns in _bill_counter_sources():
         if source_ns != ns:
             continue
-        rows = model.query.with_entities(getattr(model, col)).all()
+        # Bounded scan: only rows whose bill reference carries this namespace
+        # prefix are loaded (legacy formats are all normalised to SB-<NS>-####
+        # by the before_flush normaliser; the LIKE keeps the filter in SQL so
+        # the ix_*_auto_bill_no index is used instead of a full-table scan).
+        col_expr = getattr(model, col)
+        rows = model.query.with_entities(col_expr).filter(
+            col_expr.like(f'SB-{ns}-%')
+        ).all()
         for (ref,) in rows:
             parsed_ns, seq = _extract_sb_parts(ref)
             if seq is None:

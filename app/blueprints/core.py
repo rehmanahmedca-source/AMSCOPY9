@@ -23,7 +23,13 @@ def index():
 
     client_count = db.session.query(func.count(Client.id)).scalar() or 0
 
-    # Re-query stats with is_void=False
+    # Current Stock by Brand — authoritative movement ledger (entry IN/OUT,
+    # non-voided) grouped by material, merged onto the Material master so:
+    #   * every material from the master appears (0/0/0 rows for materials
+    #     that exist but have no movements yet — the reported "empty table")
+    #   * entry materials that are no longer in the master are still shown
+    #     explicitly instead of being silently dropped
+    # The grouped aggregation stays in SQL (one query); no per-row loading.
     stats_query = db.session.query(
         Entry.material,
         func.sum(case((Entry.type == 'IN', Entry.qty), else_=0)).label('total_in'),
@@ -34,14 +40,32 @@ def index():
         (m.name or '').strip().lower(): (m.unit or 'Bags')
         for m in Material.query.with_entities(Material.name, Material.unit).all()
     }
+    material_names = sorted(
+        {(m.name or '').strip() for m in
+         Material.query.with_entities(Material.name).all()}
+    )
 
+    entry_map = {}
+    for row in stats_query:
+        entry_map[(row.material or '').strip()] = {
+            'in': int(row.total_in or 0),
+            'out': int(row.total_out or 0),
+        }
+
+    # Every material from the master, plus any entry-only material
+    # (explicitly marked rather than silently lost).
+    all_names = material_names + sorted(
+        n for n in entry_map.keys() if n and n not in material_names
+    )
     stats = sorted([{
-        'name': row.material or "Unknown",
-        'in': int(row.total_in or 0),
-        'out': int(row.total_out or 0),
-        'stock': int((row.total_in or 0) - (row.total_out or 0)),
-        'unit': material_units.get(((row.material or '').strip().lower()), 'Bags')
-    } for row in stats_query], key=lambda x: x['name'])
+        'name': name or 'Unknown/Unbranded',
+        'in': entry_map.get(name, {}).get('in', 0),
+        'out': entry_map.get(name, {}).get('out', 0),
+        'stock': (entry_map.get(name, {}).get('in', 0)
+                  - entry_map.get(name, {}).get('out', 0)),
+        'unit': material_units.get((name or '').lower(), 'Bags'),
+        'has_movement': name in entry_map,
+    } for name in all_names], key=lambda x: x['name'])
 
     total_stock = sum(s['stock'] for s in stats)
 
@@ -86,9 +110,9 @@ def index():
     sales_breakdown_list = [{'category': k, 'amount': v} for k, v in sales_breakdown.items()]
     sales_breakdown_list.sort(key=lambda x: x['amount'], reverse=True)
 
-    clients = Client.query.filter_by(is_active=True).order_by(Client.name.asc()).all()
-    materials = Material.query.order_by(Material.name.asc()).all()
-
+    # ``clients`` / ``materials`` dropdowns are injected globally by the
+    # inject_dropdown_data context processor (same data, 20s app-level cache);
+    # re-loading both full tables here duplicated two scans per dashboard hit.
     return render_template('index.html',
                            today_date=today,
                            total_stock=int(total_stock),
@@ -97,8 +121,6 @@ def index():
                            daily_cash=daily_cash,
                            daily_credit=daily_credit,
                            total_outstanding=total_outstanding,
-                           sales_breakdown=sales_breakdown_list,
-                           clients=clients,
-                           materials=materials)
+                           sales_breakdown=sales_breakdown_list)
 
 

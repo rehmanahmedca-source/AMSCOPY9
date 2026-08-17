@@ -113,6 +113,38 @@
     </table>
   {% endcall %}
 
+  {% call ui_table_card('GRN Receipts (Incoming Stock History)', icon='bi-box-arrow-in-down') %}
+    <p class="text-white-50 small mb-3">
+      Every incoming movement in this range that traces to a GRN — the actual
+      GRN document (bill + supplier) is preserved, so "Received" above is
+      auditable history, not just an added quantity.
+    </p>
+    <table class="ui-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>GRN Bill</th>
+          <th>Supplier</th>
+          <th>Material</th>
+          <th class="num">Qty Received</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in grn_receipts %}
+        <tr>
+          <td>{{ r.date }}</td>
+          <td class="fw-bold">{{ r.bill_no }}</td>
+          <td>{{ r.supplier }}</td>
+          <td>{{ r.material }}</td>
+          <td class="num pos">{{ "%.2f"|format(r.qty) }}</td>
+        </tr>
+        {% else %}
+        <tr><td class="ui-empty" colspan="5">No GRN receipts in this range.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endcall %}
+
   {% call ui_table_card('Day-Wise Totals', icon='bi-calendar3') %}
     <table class="ui-table">
       <thead>

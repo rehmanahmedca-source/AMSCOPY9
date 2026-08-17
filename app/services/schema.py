@@ -475,6 +475,51 @@ def _ensure_direct_sale_idempotency_index():
         db.session.rollback()
 
 
+# Indexes that make the hot transaction paths bounded instead of full-scan:
+#   * bill-number lookups (find_bill_conflict, _max_used_auto_bill_seq, GRN
+#     save, sale save, duplicate-manual-bill checks)
+#   * stock movement aggregation (entry.date/material/type group-bys on the
+#     dashboard, stock summary, client ledgers)
+#   * pending-bill client/bill lookups
+# All are additive CREATE INDEX IF NOT EXISTS — no data change, safe to add to
+# a populated database, and reversible with DROP INDEX.
+_PERFORMANCE_INDEXES = [
+    # bill-number fast lookups (conflict detection + sequence sync)
+    ("ix_grn_auto_bill_no",        "CREATE INDEX IF NOT EXISTS ix_grn_auto_bill_no        ON grn(auto_bill_no)"),
+    ("ix_grn_manual_bill_no",      "CREATE INDEX IF NOT EXISTS ix_grn_manual_bill_no      ON grn(manual_bill_no)"),
+    ("ix_direct_sale_manual_bill_no", "CREATE INDEX IF NOT EXISTS ix_direct_sale_manual_bill_no ON direct_sale(manual_bill_no)"),
+    ("ix_direct_sale_auto_bill_no",   "CREATE INDEX IF NOT EXISTS ix_direct_sale_auto_bill_no   ON direct_sale(auto_bill_no)"),
+    ("ix_booking_manual_bill_no",  "CREATE INDEX IF NOT EXISTS ix_booking_manual_bill_no  ON booking(manual_bill_no)"),
+    ("ix_booking_auto_bill_no",    "CREATE INDEX IF NOT EXISTS ix_booking_auto_bill_no    ON booking(auto_bill_no)"),
+    ("ix_payment_manual_bill_no",  "CREATE INDEX IF NOT EXISTS ix_payment_manual_bill_no  ON payment(manual_bill_no)"),
+    ("ix_payment_auto_bill_no",    "CREATE INDEX IF NOT EXISTS ix_payment_auto_bill_no    ON payment(auto_bill_no)"),
+    ("ix_supplier_payment_manual_bill_no", "CREATE INDEX IF NOT EXISTS ix_supplier_payment_manual_bill_no ON supplier_payment(manual_bill_no)"),
+    ("ix_supplier_payment_auto_bill_no",   "CREATE INDEX IF NOT EXISTS ix_supplier_payment_auto_bill_no   ON supplier_payment(auto_bill_no)"),
+    ("ix_material_return_manual_bill_no",  "CREATE INDEX IF NOT EXISTS ix_material_return_manual_bill_no  ON material_return(manual_bill_no)"),
+    ("ix_material_return_auto_bill_no",    "CREATE INDEX IF NOT EXISTS ix_material_return_auto_bill_no    ON material_return(auto_bill_no)"),
+    ("ix_entry_bill_no",           "CREATE INDEX IF NOT EXISTS ix_entry_bill_no           ON entry(bill_no)"),
+    ("ix_entry_material",          "CREATE INDEX IF NOT EXISTS ix_entry_material          ON entry(material)"),
+    ("ix_entry_type",              "CREATE INDEX IF NOT EXISTS ix_entry_type              ON entry(type)"),
+    ("ix_pending_bill_bill_no",    "CREATE INDEX IF NOT EXISTS ix_pending_bill_bill_no    ON pending_bill(bill_no)"),
+    ("ix_pending_bill_client_code","CREATE INDEX IF NOT EXISTS ix_pending_bill_client_code ON pending_bill(client_code)"),
+    # DB-level duplicate-submission guard for GRNs with a manual bill number
+    # (double click / browser retry / refresh).  The app-level
+    # find_bill_conflict check is the primary guard; this unique partial index
+    # makes a second commit impossible even under a race.
+    ("uq_grn_manual_bill_no",      "CREATE UNIQUE INDEX IF NOT EXISTS uq_grn_manual_bill_no ON grn(manual_bill_no) WHERE manual_bill_no IS NOT NULL AND TRIM(manual_bill_no) <> ''"),
+]
+
+
+def _ensure_performance_indexes():
+    """Add the hot-path query indexes (idempotent, additive, reversible)."""
+    try:
+        for _name, ddl in _PERFORMANCE_INDEXES:
+            db.session.execute(text(ddl))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+
 def _ensure_default_admin():
     """Create a first admin if the user table is empty (fresh / empty DB)."""
     if User.query.count() > 0:
@@ -558,6 +603,10 @@ def _bootstrap_database():
         pass
     try:
         _ensure_direct_sale_idempotency_index()
+    except Exception:
+        pass
+    try:
+        _ensure_performance_indexes()
     except Exception:
         pass
     try:

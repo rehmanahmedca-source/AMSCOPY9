@@ -251,6 +251,10 @@
 
 <div class="ui-card ds-filter-card mb-3">
     <div class="ui-card-body">
+        <button class="btn btn-outline-secondary btn-sm w-100 mb-2 d-md-none fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#dsFilterCollapse" aria-expanded="false" aria-controls="dsFilterCollapse">
+            <i class="bi bi-funnel me-1"></i> Filter Options
+        </button>
+        <div class="collapse d-md-block" id="dsFilterCollapse">
         <form method="GET" action="{{ url_for('direct_sales_page') }}" class="row g-2 form-grid-top ui-helper-form sales-filter-form">
             <input type="hidden" name="show" value="{{ show_mode }}">
             <input type="hidden" name="page" value="1">
@@ -320,6 +324,7 @@
                 <a href="{{ url_for('direct_sales_page', show=show_mode, per_page=per_page) }}" class="btn btn-outline-light btn-sm fw-bold">Reset</a>
             </div>
         </form>
+        </div>
     </div>
 </div>
 
@@ -341,31 +346,27 @@
         <table class="table table-hover align-middle mb-0 ds-sales-table">
             <thead>
                 <tr>
-                    <th class="fw-bold py-3 ps-4">Bill No</th>
-                    <th class="fw-bold py-3">Status</th>
-                    <th class="fw-bold py-3">Client</th>
-                    <th class="fw-bold py-3">Date</th>
-                    <th class="fw-bold py-3">Time</th>
-                    <th class="fw-bold py-3">Product</th>
-                    <th class="fw-bold py-3">Qty</th>
-                    <th class="fw-bold py-3">Total</th>
-                    <th class="fw-bold py-3">Paid</th>
-                    <th class="fw-bold py-3">Driver Rent</th>
-                    <th class="fw-bold py-3 text-end pe-4">Actions</th>
+                    <th class="text-center">Bill No.</th>
+                    <th class="text-center">System Ref</th>
+                    <th class="text-center">Status</th>
+                    <th>Client</th>
+                    <th>Date &amp; Time</th>
+                    <th>Material</th>
+                    <th class="text-end">Qty</th>
+                    <th class="text-end">Total Amount</th>
+                    <th class="text-end">Driver Rent</th>
+                    <th>Notes</th>
+                    <th class="text-end pe-4">Actions</th>
                 </tr>
             </thead>
             <tbody>
                 {% for sale in sales %}
                 <tr {% if sale.is_void %}class="ds-row-void"{% endif %}>
-                    <td class="ps-4">
+                    <td class="text-center" data-label="Bill No.">
                         {% set shown_refs = [] %}
                         {% if sale.manual_bill_no and sale.manual_bill_no not in shown_refs %}
                         <a href="{{ url_for('view_bill', bill_no=sale.manual_bill_no|replace('#', '%23'), src='direct_sale', src_id=sale.id, client_name=sale.client_name) }}" class="badge bg-dark border border-secondary text-warning text-decoration-none me-1">{{ sale.manual_bill_no }}</a>
                         {% set _ = shown_refs.append(sale.manual_bill_no) %}
-                        {% endif %}
-                        {% if sale.auto_bill_no and sale.auto_bill_no not in shown_refs %}
-                        <a href="{{ url_for('view_bill', bill_no=sale.auto_bill_no|replace('#', '%23'), src='direct_sale', src_id=sale.id, client_name=sale.client_name) }}" class="badge bg-dark border border-secondary text-info text-decoration-none me-1">{{ sale.auto_bill_no }}</a>
-                        {% set _ = shown_refs.append(sale.auto_bill_no) %}
                         {% endif %}
                         {% if sale.invoice and sale.invoice.invoice_no and sale.invoice.invoice_no not in shown_refs %}
                         <a href="{{ url_for('view_bill', bill_no=sale.invoice.invoice_no|replace('#', '%23'), src='direct_sale', src_id=sale.id, client_name=sale.client_name) }}" class="badge bg-dark border border-secondary text-info text-decoration-none me-1">{{ sale.invoice.invoice_no }}</a>
@@ -375,7 +376,14 @@
                         <span class="badge bg-secondary text-white border border-secondary border-opacity-25">CASH-SALE</span>
                         {% endif %}
                     </td>
-                    <td>
+                    <td class="text-center" data-label="System Ref">
+                        {% if sale.auto_bill_no %}
+                        <a href="{{ url_for('view_bill', bill_no=sale.auto_bill_no|replace('#', '%23'), src='direct_sale', src_id=sale.id, client_name=sale.client_name) }}" class="badge bg-dark border border-secondary text-info text-decoration-none">{{ sale.auto_bill_no }}</a>
+                        {% else %}
+                        <span class="text-white-50">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center" data-label="Status">
                         {% if sale.is_void %}
                             <span class="badge bg-danger">DELETED</span>
                         {% else %}
@@ -388,19 +396,17 @@
                             {% endif %}
                         {% endif %}
                     </td>
-                    <td class="text-white">
+                    <td data-label="Client">
                         {{ sale.client_name }}
                         {% if sale.category == 'Open Khata' %}
                         <span class="badge bg-warning text-dark ms-1">Open Khata</span>
                         {% endif %}
                     </td>
-                    <td class="text-white-50">
-                        {{ sale.date_posted.strftime('%Y-%m-%d') if sale.date_posted else '-' }}
+                    <td data-label="Date &amp; Time">
+                        <span class="d-block">{{ sale.date_posted.strftime('%Y-%m-%d') if sale.date_posted else '-' }}</span>
+                        <small class="text-white-50">{{ sale.date_posted.strftime('%I:%M %p') if sale.date_posted else '' }}</small>
                     </td>
-                    <td class="text-white-50">
-                        {{ sale.date_posted.strftime('%I:%M %p') if sale.date_posted else '-' }}
-                    </td>
-                    <td class="text-white">
+                    <td data-label="Material">
                         {% if sale.items %}
                             {% for it in sale.items %}
                             <div class="small">{{ it.product_name }}{% if it.alternate_material %} <span class="text-white-50">/ {{ it.alternate_material }}</span>{% endif %}</div>
@@ -409,7 +415,7 @@
                             -
                         {% endif %}
                     </td>
-                    <td class="text-info fw-bold">
+                    <td class="text-end fw-bold" data-label="Qty">
                         {% if sale.items %}
                             {% for it in sale.items %}
                             <div>{{ it.qty }}</div>
@@ -418,11 +424,17 @@
                             0
                         {% endif %}
                     </td>
-                    <td class="text-danger fw-bold">{{ currency_symbol }}{{ "%.2f"|format(sale.amount) }}</td>
-                    <td class="text-success fw-bold">{{ currency_symbol }}{{ "%.2f"|format(sale.paid_amount) }}</td>
+                    <td class="text-end fw-bold text-danger" data-label="Total Amount">{{ currency_symbol }}{{ "%.2f"|format(sale.amount) }}</td>
                     {% set sale_rent_total = delivery_rent_totals_by_sale.get(sale.id, 0) %}
-                    <td class="text-warning fw-bold">{{ currency_symbol }}{{ "%.2f"|format((sale_rent_total or 0)) }}</td>
-                    <td class="text-end pe-4">
+                    <td class="text-end fw-bold text-warning" data-label="Driver Rent">{{ currency_symbol }}{{ "%.2f"|format((sale_rent_total or 0)) }}</td>
+                    <td data-label="Notes">
+                        {% if sale.note %}
+                        <span class="ds-note" title="{{ sale.note }}">{{ sale.note }}</span>
+                        {% else %}
+                        <span class="text-white-50">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-end pe-4" data-label="Actions">
                         {% set sale_bill_ref = (sale.invoice.invoice_no if sale.invoice else (sale.manual_bill_no or sale.auto_bill_no or ('DS-' ~ sale.id))) %}
                         {% if not sale.is_void %}
                         {% if sale.invoice %}

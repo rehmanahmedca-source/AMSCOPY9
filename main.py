@@ -1,4 +1,3 @@
-```python
 """AMS application entrypoint + GitHub auto-pull webhook."""
 
 from __future__ import annotations
@@ -431,4 +430,3 @@ if __name__ == "__main__":
         debug=True,
         use_reloader=False,
     )
-```

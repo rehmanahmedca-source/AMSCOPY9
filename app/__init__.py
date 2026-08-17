@@ -37,6 +37,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     db_parent = Path(db_path).expanduser().parent
     db_parent.mkdir(parents=True, exist_ok=True)
     max_upload_mb = int(os.environ.get("MAX_UPLOAD_MB", "256") or "256")
+    journal_mode = _resolve_sqlite_journal_mode(db_path)
 
     secret_file = instance_dir / "secret_key"
     secret = os.environ.get("SECRET_KEY")
@@ -65,6 +66,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         SECRET_KEY=secret,
         SQLALCHEMY_DATABASE_URI=f"sqlite:///{db_path}",
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        SQLITE_JOURNAL_MODE=journal_mode,
         MAX_CONTENT_LENGTH=max_upload_mb * 1024 * 1024,
         PERMANENT_SESSION_LIFETIME=timedelta(days=14),
         REMEMBER_COOKIE_DURATION=timedelta(days=30),
@@ -127,11 +129,29 @@ def create_app(test_config: dict | None = None) -> Flask:
             return
         try:
             from sqlalchemy import text as sql_text
-            db.session.execute(sql_text('PRAGMA journal_mode=WAL'))
+            mode = app.config.get('SQLITE_JOURNAL_MODE', 'WAL')
+            # WAL needs shared-memory (a -shm file) that every process mmaps.
+            # Shared hosts such as PythonAnywhere keep /home on a network
+            # filesystem where that is unsupported, so the pragma - or the very
+            # next query - raises "unable to open database file" / "disk I/O
+            # error" and every request turns into a 500.  DELETE journalling
+            # works everywhere, so it is the safe mode there.
+            db.session.execute(sql_text(f'PRAGMA journal_mode={mode}'))
             db.session.execute(sql_text('PRAGMA busy_timeout=8000'))
+            db.session.commit()
             app.config['_sqlite_wal_ready'] = True
         except Exception:
-            pass
+            # Never let a pragma failure turn a normal page into a 500.
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+            app.config['_sqlite_wal_ready'] = True
+            logging.getLogger(__name__).warning(
+                "Could not apply SQLite journal pragmas; continuing with the "
+                "database default journal mode.",
+                exc_info=True,
+            )
 
     login_manager = LoginManager()
     login_manager.login_view = "login"
@@ -213,6 +233,64 @@ def create_app(test_config: dict | None = None) -> Flask:
     start_embedded_scheduler(app)
 
     return app
+
+
+_NETWORK_FILESYSTEMS = {
+    "nfs", "nfs4", "cifs", "smb", "smb2", "smbfs", "afs", "fuse.sshfs",
+    "9p", "glusterfs", "lustre", "ceph", "beegfs", "afpfs", "ncpfs",
+}
+
+
+def _on_network_filesystem(path: str) -> bool:
+    """Best-effort detection of a network-mounted filesystem.
+
+    SQLite's WAL journal needs POSIX shared memory, which network filesystems
+    do not provide.  Shared hosting such as PythonAnywhere serves /home over
+    NFS-like storage, so a WAL database there fails with "unable to open
+    database file" / "disk I/O error" on every request.
+    """
+    try:
+        target = Path(path).expanduser().resolve()
+    except Exception:
+        return False
+    candidate = target if target.exists() else target.parent
+    try:
+        mounts = Path("/proc/mounts").read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return False
+    best_point, best_type = "", ""
+    for line in mounts.splitlines():
+        parts = line.split()
+        if len(parts) < 3:
+            continue
+        point, fstype = parts[1].replace("\\040", " "), parts[2]
+        try:
+            mount_path = Path(point)
+        except Exception:
+            continue
+        if candidate == mount_path or mount_path in candidate.parents:
+            if len(point) >= len(best_point):
+                best_point, best_type = point, fstype
+    return best_type.lower() in _NETWORK_FILESYSTEMS
+
+
+def _resolve_sqlite_journal_mode(db_path: str) -> str:
+    """Pick a journal mode that actually works on this host.
+
+    Override explicitly with SQLITE_JOURNAL_MODE=WAL|DELETE|TRUNCATE.
+    """
+    configured = (os.environ.get("SQLITE_JOURNAL_MODE") or "").strip().upper()
+    allowed = {"WAL", "DELETE", "TRUNCATE", "PERSIST", "MEMORY", "OFF"}
+    if configured in allowed:
+        return configured
+    # PythonAnywhere exports these markers in the web-app environment.
+    on_pythonanywhere = any(
+        key in os.environ
+        for key in ("PYTHONANYWHERE_DOMAIN", "PYTHONANYWHERE_SITE")
+    )
+    if on_pythonanywhere or _on_network_filesystem(db_path):
+        return "DELETE"
+    return "WAL"
 
 
 def _alias_unprefixed_endpoints(app: Flask) -> None:

@@ -67,15 +67,30 @@ def full_raw_import_history_export():
         return "Forbidden", 403
     reports = _list_full_raw_reports()
     output = io.StringIO()
+    # Report metadata has grown over time (status/updated/failed/warnings...).
+    # A fixed fieldname list makes csv.DictWriter raise ValueError -> HTTP 500
+    # as soon as an older or newer report carries an extra key, so build the
+    # column set from the data and keep the known columns first.
+    known = [
+        'name', 'created_at', 'row_count', 'scope', 'mode', 'tenant_name',
+        'inserted', 'updated', 'skipped', 'failed', 'status', 'warnings',
+        'tables', 'source_file',
+    ]
+    extra = sorted({k for r in reports for k in r} - set(known))
     writer = csv.DictWriter(
         output,
-        fieldnames=[
-            'name', 'created_at', 'row_count', 'scope', 'mode', 'tenant_name',
-            'inserted', 'skipped', 'tables', 'source_file'
-        ]
+        fieldnames=known + extra,
+        extrasaction='ignore',
     )
     writer.writeheader()
-    writer.writerows(reports)
+    for report in reports:
+        writer.writerow({
+            key: (
+                json.dumps(value, ensure_ascii=True)
+                if isinstance(value, (dict, list)) else value
+            )
+            for key, value in report.items()
+        })
     return Response(
         output.getvalue(),
         mimetype="text/csv",

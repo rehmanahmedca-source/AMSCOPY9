@@ -97,6 +97,7 @@
                     <th>Date</th>
                     <th>Bill</th>
                     <th>Client</th>
+                    <th>Type</th>
                     <th>Items</th>
                     <th class="text-end">Amount</th>
                     <th class="text-end">Action</th>
@@ -108,6 +109,13 @@
                     <td>{{ r.date_posted.strftime('%Y-%m-%d %H:%M') if r.date_posted else '-' }}</td>
                     <td>{{ r.manual_bill_no or r.auto_bill_no or ('RTN-' ~ r.id) }}</td>
                     <td>{{ r.client_name }}</td>
+                    <td>
+                        {% if (r.return_type or 'normal') == 'booked' %}
+                        <span class="badge bg-warning text-dark">Booked</span>
+                        {% else %}
+                        <span class="badge bg-secondary">Normal</span>
+                        {% endif %}
+                    </td>
                     <td>
                         {% if r.items %}
                             {% for it in r.items %}
@@ -212,6 +220,7 @@
                     <div class="row g-2 return-row mb-2 returns-item-row">
                         <div class="col-md-5 position-relative">
                             <div class="input-group">
+                                <input type="hidden" name="material_id[]" class="material-id-input" value="">
                                 <input class="form-control return-material-input" name="material_name[]" placeholder="Material" autocomplete="off" onfocus="openReturnMaterialCombobox(this)" oninput="filterReturnMaterialCombobox(this)">
                                 <button class="btn btn-outline-secondary" type="button" onclick="openReturnMaterialFromButton(this)">
                                     <i class="bi bi-chevron-down text-warning"></i>
@@ -287,6 +296,7 @@
                     <div class="row g-2 return-row mb-2 returns-item-row">
                         <div class="col-md-5 position-relative">
                             <div class="input-group">
+                                <input type="hidden" name="material_id[]" class="material-id-input" value="{% for m in materials %}{% if m.name == it.material_name %}{{ m.id }}{% endif %}{% endfor %}">
                                 <input class="form-control return-material-input" name="material_name[]" value="{{ it.material_name }}" placeholder="Material" autocomplete="off" onfocus="openReturnMaterialCombobox(this)" oninput="filterReturnMaterialCombobox(this)">
                                 <button class="btn btn-outline-secondary" type="button" onclick="openReturnMaterialFromButton(this)">
                                     <i class="bi bi-chevron-down text-warning"></i>
@@ -329,9 +339,12 @@
 (function () {
     const RETURN_MATERIALS = [
         {% for m in materials %}
-        {{ (m.name or '')|tojson }},
+        { id: {{ m.id }}, name: {{ (m.name or '')|tojson }} },
         {% endfor %}
     ];
+    window.AMS_KNOWN_MATERIAL_NAMES = new Set(
+        RETURN_MATERIALS.map((m) => m.name).concat(RETURN_MATERIALS.map((m) => String(m.name || '').toLowerCase()))
+    );
     const RETURN_MATERIAL_LIST_ID = 'returnMaterialCombobox';
     let returnMaterialInputCounter = 0;
     let activeReturnMaterialInput = null;
@@ -386,10 +399,16 @@
             item.style.display = txt.includes(filter) ? '' : 'none';
         });
     };
-    function selectReturnMaterial(value) {
+    function selectReturnMaterial(value, materialId) {
         if (!activeReturnMaterialInput) return;
         activeReturnMaterialInput.value = value;
         activeReturnMaterialInput.dataset.comboSuppress = '1';
+        if (typeof window.setSelectedMaterialId === 'function') {
+            window.setSelectedMaterialId(activeReturnMaterialInput, materialId || '', value);
+        } else {
+            const hid = activeReturnMaterialInput.closest('.position-relative')?.querySelector('input[name="material_id[]"]');
+            if (hid) hid.value = materialId || '';
+        }
         const display = activeReturnMaterialInput.closest('.position-relative')?.querySelector('.return-material-display');
         if (display) display.innerText = `Material: ${value}`;
         const list = document.getElementById(RETURN_MATERIAL_LIST_ID);

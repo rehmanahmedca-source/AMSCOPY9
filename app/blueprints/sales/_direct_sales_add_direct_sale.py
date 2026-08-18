@@ -183,12 +183,10 @@ def add_direct_sale():
             returned_booked_totals[key] = returned_booked_totals.get(key, 0) + float(entry.qty or 0)
 
         for mat_in in set(materials_list):
-            mat_obj = get_material_by_input(mat_in)
-            mat_name_in = str(mat_in or '').strip()
-            if not mat_obj and mat_name_in:
-                mat_obj = Material(code=generate_material_code(), name=mat_name_in, category_id=_get_default_material_category_id())
-                db.session.add(mat_obj)
-                db.session.flush()
+            try:
+                mat_obj = resolve_transaction_material(typed_text=mat_in, require_active=True)
+            except ValueError:
+                continue
             if not mat_obj:
                 continue
             key = _material_norm_key(mat_obj.name)
@@ -199,27 +197,29 @@ def add_direct_sale():
     calculated_amount = 0
     missing_rate_non_booked = []
 
+    material_ids = request.form.getlist('material_id[]')
+    alternate_ids = request.form.getlist('alternate_material_id[]')
+
     for idx, mat in enumerate(materials_list):
         qty_val = qtys[idx] if idx < len(qtys) else ''
         rate_val = rates[idx] if idx < len(rates) else ''
-        mat_obj = get_material_by_input(mat)
         mat_name_in = str(mat or '').strip()
-        if not mat_obj and mat_name_in:
-            mat_obj = Material(
-                code=generate_material_code(),
-                name=mat_name_in,
-                unit_price=_to_float_or_zero(rate_val),
-                category_id=_get_default_material_category_id()
+        mid = material_ids[idx] if idx < len(material_ids) else ''
+        qty = _to_float_or_zero(qty_val)
+        if not mat_name_in and not str(mid or '').strip() and qty <= 0:
+            continue
+        try:
+            mat_obj = resolve_transaction_material(
+                material_id=mid,
+                typed_text=mat_name_in,
+                require_active=True,
             )
-            db.session.add(mat_obj)
-            db.session.flush()
-        if not mat_obj or not qty_val:
+        except ValueError as ve:
+            return _fail_sale(str(ve))
+        if not mat_obj or qty <= 0:
             continue
         mat_name = mat_obj.name
-        qty = _to_float_or_zero(qty_val)
         rate = _to_float_or_zero(rate_val)
-        if qty <= 0:
-            continue
 
         ignore_item = False
         if idx < len(ignore_items):
@@ -234,13 +234,19 @@ def add_direct_sale():
         qty_sale = qty
 
         alt_input = (alternate_list[idx] if idx < len(alternate_list) else '').strip()
+        alt_mid = alternate_ids[idx] if idx < len(alternate_ids) else ''
         alt_obj = None
-        if alt_input:
-            alt_obj = get_material_by_input(alt_input)
+        if alt_input or str(alt_mid or '').strip():
+            try:
+                alt_obj = resolve_transaction_material(
+                    material_id=alt_mid,
+                    typed_text=alt_input,
+                    require_active=True,
+                )
+            except ValueError as ve:
+                return _fail_sale(str(ve))
             if not alt_obj:
-                alt_obj = Material(code=generate_material_code(), name=alt_input, category_id=_get_default_material_category_id())
-                db.session.add(alt_obj)
-                db.session.flush()
+                return _fail_sale(MATERIAL_NOT_SELECTED_MSG)
 
         if balance > 0:
             qty_booking = min(qty, balance)

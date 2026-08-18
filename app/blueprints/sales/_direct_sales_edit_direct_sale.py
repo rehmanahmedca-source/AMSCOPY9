@@ -146,6 +146,8 @@ def edit_direct_sale(id):
 
         materials_list = request.form.getlist('product_name[]')
         alternate_list = request.form.getlist('alternate_material[]')
+        material_ids = request.form.getlist('material_id[]')
+        alternate_ids = request.form.getlist('alternate_material_id[]')
         qtys = request.form.getlist('qty[]')
         rates = request.form.getlist('unit_rate[]')
         grn_item_ids = request.form.getlist('grn_item_id[]')
@@ -216,7 +218,10 @@ def edit_direct_sale(id):
                     returned_totals[key] = returned_totals.get(key, 0) + float(e.qty or 0)
 
             for raw in set(materials_list):
-                m = get_material_by_input(raw)
+                try:
+                    m = resolve_transaction_material(typed_text=raw, require_active=False)
+                except ValueError:
+                    continue
                 if not m:
                     continue
                 key = _material_norm_key(m.name)
@@ -227,6 +232,10 @@ def edit_direct_sale(id):
                     + float(returned_totals.get(key, 0) or 0),
                 )
 
+        historical_product_names = [
+            row[0]
+            for row in db.session.query(DirectSaleItem.product_name).filter_by(sale_id=sale.id).all()
+        ]
         parsed_items = []
         max_len = max(len(materials_list), len(alternate_list), len(qtys), len(rates))
         for idx in range(max_len):
@@ -235,23 +244,41 @@ def edit_direct_sale(id):
             qty = qtys[idx] if idx < len(qtys) else ''
             rate = rates[idx] if idx < len(rates) else ''
             mat_name_in = str(mat or '').strip()
-            if not mat_name_in:
-                continue
-            mat_obj = get_material_by_input(mat_name_in)
-            if not mat_obj:
-                return _fail_edit(f'Select a valid material from list. "{mat_name_in}" was not found.')
+            mid = material_ids[idx] if idx < len(material_ids) else ''
             qty_val = _to_float_or_zero(qty)
+            if not mat_name_in and not str(mid or '').strip() and qty_val <= 0:
+                continue
+            try:
+                mat_obj = resolve_transaction_material(
+                    material_id=mid,
+                    typed_text=mat_name_in,
+                    require_active=True,
+                    allow_inactive_names=historical_product_names,
+                )
+            except ValueError as ve:
+                return _fail_edit(str(ve))
+            if not mat_obj:
+                return _fail_edit(MATERIAL_NOT_SELECTED_MSG)
             if qty_val <= 0:
                 continue
             rate_val = _to_float_or_zero(rate)
             if rate_val < 0:
                 rate_val = 0
             alt_name_in = str(alt or '').strip()
+            alt_mid = alternate_ids[idx] if idx < len(alternate_ids) else ''
             alt_obj = None
-            if alt_name_in:
-                alt_obj = get_material_by_input(alt_name_in)
+            if alt_name_in or str(alt_mid or '').strip():
+                try:
+                    alt_obj = resolve_transaction_material(
+                        material_id=alt_mid,
+                        typed_text=alt_name_in,
+                        require_active=True,
+                        allow_inactive_names=historical_product_names,
+                    )
+                except ValueError as ve:
+                    return _fail_edit(str(ve))
                 if not alt_obj:
-                    return _fail_edit(f'Select a valid alternate material from list. "{alt_name_in}" was not found.')
+                    return _fail_edit(MATERIAL_NOT_SELECTED_MSG)
 
             grn_item_id = None
             if idx < len(grn_item_ids) and grn_item_ids[idx]:

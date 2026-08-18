@@ -43,31 +43,28 @@ def _sync_booking_paid_into_account(booking, *, payment_account_id, method='Cash
     return acc
 
 
-def _collect_booking_item_updates(materials_list, qtys, rates, item_ids=None):
-    """Normalize submitted booking lines and auto-create missing materials."""
+def _collect_booking_item_updates(materials_list, qtys, rates, item_ids=None, material_ids=None):
+    """Normalize submitted booking lines against existing Material Master records."""
     rows = []
-    for mat, qty, rate, item_id in zip_longest(
-        materials_list or [], qtys or [], rates or [], item_ids or [], fillvalue=''
+    for mat, qty, rate, item_id, mid in zip_longest(
+        materials_list or [], qtys or [], rates or [], item_ids or [], material_ids or [], fillvalue=''
     ):
         mat_name = str(mat or '').strip()
         qty_val = _to_float_or_zero(qty)
         rate_val = _to_float_or_zero(rate)
-        if qty_val <= 0 and not mat_name:
+        if qty_val <= 0 and not mat_name and not str(mid or '').strip():
             continue
         if qty_val > 0 and rate_val <= 0:
             raise ValueError(f'Unit rate is required and must be greater than 0 for "{mat_name}".')
-        if not mat_name:
+        if not mat_name and not str(mid or '').strip():
             continue
-        mat_obj = get_material_by_input(mat)
+        mat_obj = resolve_transaction_material(
+            material_id=mid,
+            typed_text=mat_name,
+            require_active=True,
+        )
         if not mat_obj:
-            mat_obj = Material(
-                code=generate_material_code(),
-                name=mat_name,
-                unit_price=rate_val,
-                category_id=_get_default_material_category_id()
-            )
-            db.session.add(mat_obj)
-            db.session.flush()
+            raise ValueError(MATERIAL_NOT_SELECTED_MSG)
         try:
             keep_id = int(item_id) if str(item_id or '').strip() else None
         except (TypeError, ValueError):
@@ -220,7 +217,8 @@ def booking_edit_modal(booking_id):
     )
     clients = Client.query.filter_by(is_active=True).order_by(Client.name.asc()).all()
     accounts = Account.query.filter(func.coalesce(Account.is_active, True) == True).order_by(Account.name.asc()).all()
-    return render_template('_booking_edit_modal.html', booking=booking, clients=clients, accounts=accounts)
+    materials = Material.query.filter_by(is_active=True).order_by(Material.name.asc()).all()
+    return render_template('_booking_edit_modal.html', booking=booking, clients=clients, accounts=accounts, materials=materials)
 
 
 @bp.route('/add_booking', methods=['POST'])
@@ -228,6 +226,7 @@ def booking_edit_modal(booking_id):
 def add_booking():
     client_input = request.form.get('client_code', '').strip() or request.form.get('client_name', '').strip()
     materials_list = request.form.getlist('material_name[]')
+    material_ids = request.form.getlist('material_id[]')
     qtys = request.form.getlist('qty[]')
     rates = request.form.getlist('unit_rate[]')
     amount = _to_float_or_zero(request.form.get('amount', 0))
@@ -285,28 +284,33 @@ def add_booking():
     db.session.add(booking)
     db.session.flush()
 
-    # Add booking items; auto-create material master if missing.
-    for mat, qty, rate in zip(materials_list, qtys, rates):
-        mat_obj = get_material_by_input(mat)
+    # Add booking items from existing Material Master records only.
+    for mat, qty, rate, mid in zip_longest(materials_list, qtys, rates, material_ids, fillvalue=''):
         mat_name = str(mat or '').strip()
-        if _to_float_or_zero(qty) > 0 and _to_float_or_zero(rate) <= 0:
+        qty_val = _to_float_or_zero(qty)
+        rate_val = _to_float_or_zero(rate)
+        if qty_val <= 0 and not mat_name and not str(mid or '').strip():
+            continue
+        if qty_val > 0 and rate_val <= 0:
             flash(f'Unit rate is required and must be greater than 0 for "{mat_name}".', 'danger')
             return redirect(url_for('bookings_page'))
-        if not mat_obj and mat_name:
-            mat_obj = Material(
-                code=generate_material_code(),
-                name=mat_name,
-                unit_price=_to_float_or_zero(rate),
-                category_id=_get_default_material_category_id()
+        try:
+            mat_obj = resolve_transaction_material(
+                material_id=mid,
+                typed_text=mat_name,
+                require_active=True,
             )
-            db.session.add(mat_obj)
-            db.session.flush()
-        if mat_obj:
-            db.session.add(
-                BookingItem(booking_id=booking.id,
-                            material_name=mat_obj.name,
-                            qty=_to_float_or_zero(qty),
-                            price_at_time=_to_float_or_zero(rate)))
+        except ValueError as ve:
+            db.session.rollback()
+            flash(str(ve), 'danger')
+            return redirect(url_for('bookings_page'))
+        if not mat_obj or qty_val <= 0:
+            continue
+        db.session.add(
+            BookingItem(booking_id=booking.id,
+                        material_name=mat_obj.name,
+                        qty=qty_val,
+                        price_at_time=rate_val))
 
     # Pending bills are derived from the booking source. Rebuild this source's row
     # instead of incrementing an existing snapshot.
@@ -364,6 +368,7 @@ def edit_booking(id):
         booking.client_name = client.name
 
     materials_list = request.form.getlist('material_name[]')
+    material_ids = request.form.getlist('material_id[]')
     qtys = request.form.getlist('qty[]')
     rates = request.form.getlist('unit_rate[]')
     item_ids = request.form.getlist('booking_item_id[]')

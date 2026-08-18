@@ -1615,6 +1615,13 @@ function toggleNavGroup(groupId, btn) {
         const code = item.getAttribute('data-combo-code') || '';
         const name = item.getAttribute('data-combo-name') || item.getAttribute('data-combo-code') || '';
         if (inputId) selectComboboxItem(inputId, list.id, code, name, displayId, nameInputId, valueInputId);
+        const matId = item.getAttribute('data-material-id') || '';
+        if (inputId && (matId || item.hasAttribute('data-material-id'))) {
+            const picked = document.getElementById(inputId);
+            if (typeof window.setSelectedMaterialId === 'function') {
+                window.setSelectedMaterialId(picked, matId, name || code);
+            }
+        }
         if (extraFn && typeof window[extraFn] === 'function') {
             try { window[extraFn](code, name, inputId); } catch (_) {}
         }

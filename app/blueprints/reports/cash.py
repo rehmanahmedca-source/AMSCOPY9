@@ -1,124 +1,156 @@
-"""cash — split from reports.py."""
+"""cash — configuration-driven Cash Flow routes."""
 from ._common import *  # noqa
 
-PARTY_TYPES = [
-    ('person', 'Person'),
-    ('outsider', 'Outsider / other party'),
-    ('loan', 'Loan (person or outside lender)'),
-    ('other', 'Other'),
-]
+logger = logging.getLogger(__name__)
 
-DEFAULT_CF_CATEGORIES = [
-    ('Loan Received', 'in', ['Personal loan', 'Bank loan']),
-    ('Other Bank / Transfer In', 'in', []),
-    ('Person', 'in', []),
-    ('Outsider / Other Party', 'in', []),
-    ('Other Income', 'in', []),
-    ('Fuel', 'out', ['Petrol', 'Diesel', 'CNG']),
-    ('Vehicle Repair', 'out', ['Parts', 'Labour', 'Workshop']),
-    ('Food', 'out', []),
-    ('Loan Paid', 'out', ['Personal loan', 'Bank loan']),
-    ('Other Bank / Transfer Out', 'out', []),
-    ('Person', 'out', []),
-    ('Other Expense', 'out', []),
-]
-
-
-def _ensure_cash_flow_defaults():
-    try:
-        if CashFlowCategory.query.count() == 0:
-            for i, (name, direction, subs) in enumerate(DEFAULT_CF_CATEGORIES):
-                cat = CashFlowCategory(name=name, direction=direction, sort_order=i, is_active=True)
-                db.session.add(cat)
-                db.session.flush()
-                for sub in subs:
-                    db.session.add(CashFlowSubcategory(category_id=cat.id, name=sub, is_active=True))
-            db.session.commit()
-    except Exception:
-        db.session.rollback()
-
-
-def _find_or_create_cf_category(name, direction):
-    name = (name or '').strip()
-    if not name:
-        return None
-    existing = CashFlowCategory.query.filter(
-        func.lower(CashFlowCategory.name) == name.lower(),
-        CashFlowCategory.is_active == True
-    ).first()
-    if existing:
-        return existing
-    cat = CashFlowCategory(name=name, direction=direction if direction in ('in', 'out') else 'both', is_active=True)
-    db.session.add(cat)
-    db.session.flush()
-    return cat
+from app.services.cash_flow_svc import (
+    CF_DIR_IN,
+    CF_DIR_OUT,
+    CF_DIR_TRANSFER,
+    CF_PARTY_TYPES,
+    CF_SOURCE_LABELS,
+    apply_running_balance,
+    categories_for_direction,
+    collect_cash_flow_rows,
+    disable_cf_category,
+    disable_cf_party,
+    disable_cf_subcategory,
+    enable_cf_category,
+    enable_cf_party,
+    enable_cf_subcategory,
+    filter_cash_flow_rows,
+    rename_cf_category,
+    rename_cf_subcategory,
+    restore_manual_cash_flow_entry,
+    save_cf_category,
+    save_cf_party,
+    save_cf_subcategory,
+    save_manual_cash_flow_entry,
+    subcategories_for_category,
+    summarize_cash_flow_rows,
+    update_cf_party,
+    update_manual_cash_flow_entry,
+    void_manual_cash_flow_entry,
+    _cf_account_label,
+    _cf_company_accounts,
+    _cf_ensure_indexes,
+    _cf_normalize_direction,
+    _cf_sort_key,
+    _cf_type_label,
+)
 
 
-def _find_or_create_cf_subcategory(category, name):
-    name = (name or '').strip()
-    if not category or not name:
-        return None
-    existing = CashFlowSubcategory.query.filter(
-        CashFlowSubcategory.category_id == category.id,
-        func.lower(CashFlowSubcategory.name) == name.lower(),
-        CashFlowSubcategory.is_active == True
-    ).first()
-    if existing:
-        return existing
-    sub = CashFlowSubcategory(category_id=category.id, name=name, is_active=True)
-    db.session.add(sub)
-    db.session.flush()
-    return sub
+def _cf_redirect(**kwargs):
+    params = {k: v for k, v in kwargs.items() if v not in (None, '')}
+    return redirect(url_for('cash_flow', **params))
 
 
-def _find_or_create_cf_party(name, party_type):
-    name = (name or '').strip()
-    if not name:
-        return None
-    ptype = (party_type or 'other').strip().lower() or 'other'
-    existing = CashFlowParty.query.filter(
-        func.lower(CashFlowParty.name) == name.lower(),
-        func.lower(func.coalesce(CashFlowParty.party_type, '')) == ptype,
-        CashFlowParty.is_active == True
-    ).first()
-    if existing:
-        return existing
-    party = CashFlowParty(name=name, party_type=ptype, is_active=True)
-    db.session.add(party)
-    db.session.flush()
-    return party
-
-
-def _empty_row_meta():
+def _cf_filter_kwargs(source):
     return {
-        'category': '',
-        'subcategory': '',
-        'party_name': '',
-        'party_type': '',
-        'account_name': '',
-        'entry_id': None,
+        'from_date': source.get('from_date'),
+        'to_date': source.get('to_date'),
+        'filter_type': source.get('filter_type') or 'all',
+        'origin': source.get('origin') or 'all',
+        'category': source.get('category') or '',
+        'subcategory': source.get('subcategory') or '',
+        'party_type': source.get('party_type') or '',
+        'party': source.get('party') or '',
+        'account_id': source.get('account_id') or '',
+        'q': source.get('q') or '',
+        'notes': source.get('notes') or '',
+        'reference': source.get('reference') or '',
+        'description': source.get('description') or '',
+        'created_by': source.get('created_by') or '',
+        'status': source.get('status') or 'active',
+        'amount_min': source.get('amount_min') or '',
+        'amount_max': source.get('amount_max') or '',
     }
+
+
+@bp.route('/cash_flow/meta/categories')
+@login_required
+def cash_flow_categories_meta():
+    direction = _cf_normalize_direction(request.args.get('direction') or '')
+    cats = categories_for_direction(direction or 'both')
+    return jsonify({
+        'categories': [
+            {'id': c.id, 'name': c.name, 'direction': c.direction or 'both', 'notes': c.notes or ''}
+            for c in cats
+        ]
+    })
+
+
+@bp.route('/cash_flow/meta/subcategories')
+@login_required
+def cash_flow_subcategories_meta():
+    category_id = request.args.get('category_id', type=int)
+    if not category_id:
+        return jsonify({'subcategories': []})
+    return jsonify({
+        'subcategories': [
+            {'id': s.id, 'name': s.name, 'category_id': s.category_id, 'notes': s.notes or ''}
+            for s in subcategories_for_category(category_id)
+        ]
+    })
+
+
+@bp.route('/cash_flow/entry/<int:entry_id>.json')
+@login_required
+def cash_flow_entry_json(entry_id):
+    entry = CashFlowEntry.query.get_or_404(entry_id)
+    dest = getattr(entry, 'destination_account', None)
+    audits = []
+    for a in sorted(getattr(entry, 'audit_trail', []) or [], key=lambda x: x.id):
+        audits.append({
+            'action': a.action,
+            'reason': a.reason or '',
+            'changed_by': a.changed_by or '',
+            'changed_at': a.changed_at.strftime('%Y-%m-%d %H:%M') if a.changed_at else '',
+        })
+    return jsonify({
+        'id': entry.id,
+        'direction': entry.direction,
+        'amount': float(entry.amount or 0),
+        'account_id': entry.account_id,
+        'account_name': entry.account.name if entry.account else '',
+        'destination_account_id': getattr(entry, 'destination_account_id', None),
+        'destination_account_name': dest.name if dest else '',
+        'category_id': entry.category_id,
+        'category_name': entry.category.name if entry.category else '',
+        'subcategory_id': entry.subcategory_id,
+        'subcategory_name': entry.subcategory.name if entry.subcategory else '',
+        'party_id': entry.party_id,
+        'party_name': entry.party_name or '',
+        'party_type': entry.party_type or 'other',
+        'description': entry.description or '',
+        'note': entry.note or '',
+        'reference': getattr(entry, 'reference', None) or '',
+        'date_posted': entry.date_posted.strftime('%Y-%m-%dT%H:%M') if entry.date_posted else '',
+        'is_void': bool(entry.is_void),
+        'void_reason': getattr(entry, 'void_reason', None) or '',
+        'voided_by': getattr(entry, 'voided_by', None) or '',
+        'created_by': entry.created_by or '',
+        'updated_by': getattr(entry, 'updated_by', None) or '',
+        'status': 'voided' if entry.is_void else 'active',
+        'audit': audits,
+    })
 
 
 @bp.route('/cash_flow', methods=['GET', 'POST'])
 @login_required
 def cash_flow():
-    _ensure_cash_flow_defaults()
+    _cf_ensure_indexes()
     source = request.form if request.method == 'POST' else request.args
     fresh_start_dt = pk_today()
     fresh_start_date = fresh_start_dt.strftime('%Y-%m-%d')
     from_date = source.get('from_date', fresh_start_date)
     to_date = source.get('to_date', fresh_start_date)
-    filter_type = source.get('filter_type', 'all')
-    filter_origin = (source.get('origin') or 'all').strip().lower()
-    filter_category = (source.get('category') or '').strip()
-    filter_subcategory = (source.get('subcategory') or '').strip()
-    filter_party_type = (source.get('party_type') or '').strip().lower()
-    filter_party = (source.get('party') or '').strip()
-    filter_account_id = source.get('account_id', type=int)
-    filter_q = (source.get('q') or '').strip()
+    filter_kwargs = _cf_filter_kwargs(source)
+    filter_type = filter_kwargs['filter_type']
     opening_balance_input = source.get('opening_balance', '').strip()
     export_pdf = request.args.get('export_pdf', '')
+    export_csv = request.args.get('export_csv', '')
+    export_scope = (request.args.get('export_scope') or 'filtered').strip().lower()
 
     adjustment_date_input = to_date
     physical_cash_input = ''
@@ -130,141 +162,259 @@ def cash_flow():
         reconciliation_reason = request.form.get('reconciliation_reason', '').strip()
         action = request.form.get('action', '').strip()
 
+    def _back():
+        return _cf_redirect(**{**filter_kwargs, 'from_date': from_date, 'to_date': to_date})
+
     if request.method == 'POST' and action == 'add_category':
-        name = (request.form.get('new_category_name') or '').strip()
-        direction = (request.form.get('new_category_direction') or 'both').strip().lower()
-        if not name:
-            flash('Category name is required.', 'danger')
-        else:
-            _find_or_create_cf_category(name, direction)
+        try:
+            save_cf_category(
+                request.form.get('new_category_name'),
+                request.form.get('new_category_direction') or 'both',
+                notes=request.form.get('new_category_notes'),
+                actor=current_user,
+            )
             db.session.commit()
-            flash(f'Category “{name}” saved.', 'success')
-        return redirect(url_for('cash_flow', from_date=from_date, to_date=to_date, filter_type=filter_type))
+            flash('Category saved.', 'success')
+        except ValueError as exc:
+            db.session.rollback()
+            flash(str(exc), 'danger')
+        except Exception:
+            db.session.rollback()
+            logger.exception('Cash flow add category failed')
+            flash('Unable to save category.', 'danger')
+        return _back()
 
     if request.method == 'POST' and action == 'add_subcategory':
-        cat_id = request.form.get('new_sub_category_id', type=int)
-        name = (request.form.get('new_subcategory_name') or '').strip()
-        cat = CashFlowCategory.query.get(cat_id) if cat_id else None
-        if not cat or not name:
-            flash('Pick a category and enter a sub-category name.', 'danger')
-        else:
-            _find_or_create_cf_subcategory(cat, name)
+        try:
+            save_cf_subcategory(
+                request.form.get('new_sub_category_id', type=int),
+                request.form.get('new_subcategory_name'),
+                notes=request.form.get('new_subcategory_notes'),
+                actor=current_user,
+            )
             db.session.commit()
-            flash(f'Sub-category “{name}” added under {cat.name}.', 'success')
-        return redirect(url_for('cash_flow', from_date=from_date, to_date=to_date, filter_type=filter_type))
+            flash('Sub-category saved.', 'success')
+        except ValueError as exc:
+            db.session.rollback()
+            flash(str(exc), 'danger')
+        except Exception:
+            db.session.rollback()
+            logger.exception('Cash flow add subcategory failed')
+            flash('Unable to save sub-category.', 'danger')
+        return _back()
 
     if request.method == 'POST' and action == 'add_party':
-        name = (request.form.get('new_party_name') or '').strip()
-        ptype = (request.form.get('new_party_type') or 'person').strip().lower()
-        if not name:
-            flash('Name is required.', 'danger')
-        else:
-            _find_or_create_cf_party(name, ptype)
+        try:
+            save_cf_party(
+                request.form.get('new_party_name'),
+                request.form.get('new_party_type') or 'person',
+                note=request.form.get('new_party_note'),
+                actor=current_user,
+            )
             db.session.commit()
-            flash(f'Party “{name}” saved.', 'success')
-        return redirect(url_for('cash_flow', from_date=from_date, to_date=to_date, filter_type=filter_type))
+            flash('Party saved.', 'success')
+        except ValueError as exc:
+            db.session.rollback()
+            flash(str(exc), 'danger')
+        except Exception:
+            db.session.rollback()
+            logger.exception('Cash flow add party failed')
+            flash('Unable to save party.', 'danger')
+        return _back()
 
-    if request.method == 'POST' and action == 'delete_entry':
+    if request.method == 'POST' and action == 'disable_category':
+        try:
+            disable_cf_category(request.form.get('category_id', type=int))
+            db.session.commit()
+            flash('Category disabled. Historical rows keep the name.', 'success')
+        except ValueError as exc:
+            db.session.rollback()
+            flash(str(exc), 'danger')
+        return _back()
+
+    if request.method == 'POST' and action == 'disable_subcategory':
+        try:
+            disable_cf_subcategory(request.form.get('subcategory_id', type=int))
+            db.session.commit()
+            flash('Sub-category disabled. Historical rows keep the name.', 'success')
+        except ValueError as exc:
+            db.session.rollback()
+            flash(str(exc), 'danger')
+        return _back()
+
+    if request.method == 'POST' and action == 'enable_category':
+        try:
+            enable_cf_category(request.form.get('category_id', type=int))
+            db.session.commit()
+            flash('Category enabled.', 'success')
+        except ValueError as exc:
+            db.session.rollback()
+            flash(str(exc), 'danger')
+        return _back()
+
+    if request.method == 'POST' and action == 'enable_subcategory':
+        try:
+            enable_cf_subcategory(request.form.get('subcategory_id', type=int))
+            db.session.commit()
+            flash('Sub-category enabled.', 'success')
+        except ValueError as exc:
+            db.session.rollback()
+            flash(str(exc), 'danger')
+        return _back()
+
+    if request.method == 'POST' and action == 'update_party':
+        try:
+            update_cf_party(
+                request.form.get('party_id', type=int),
+                request.form.get('party_name'),
+                party_type=request.form.get('party_type'),
+                note=request.form.get('party_note'),
+            )
+            db.session.commit()
+            flash('Party updated.', 'success')
+        except ValueError as exc:
+            db.session.rollback()
+            flash(str(exc), 'danger')
+        return _back()
+
+    if request.method == 'POST' and action == 'disable_party':
+        try:
+            disable_cf_party(request.form.get('party_id', type=int))
+            db.session.commit()
+            flash('Party disabled. Historical rows keep the name.', 'success')
+        except ValueError as exc:
+            db.session.rollback()
+            flash(str(exc), 'danger')
+        return _back()
+
+    if request.method == 'POST' and action == 'enable_party':
+        try:
+            enable_cf_party(request.form.get('party_id', type=int))
+            db.session.commit()
+            flash('Party enabled.', 'success')
+        except ValueError as exc:
+            db.session.rollback()
+            flash(str(exc), 'danger')
+        return _back()
+
+    if request.method == 'POST' and action == 'rename_category':
+        try:
+            rename_cf_category(
+                request.form.get('category_id', type=int),
+                request.form.get('category_name'),
+                direction=request.form.get('category_direction'),
+                notes=request.form.get('category_notes'),
+            )
+            db.session.commit()
+            flash('Category updated. Historical rows stay linked to the same category.', 'success')
+        except ValueError as exc:
+            db.session.rollback()
+            flash(str(exc), 'danger')
+        return _back()
+
+    if request.method == 'POST' and action == 'rename_subcategory':
+        try:
+            rename_cf_subcategory(
+                request.form.get('subcategory_id', type=int),
+                request.form.get('subcategory_name'),
+                notes=request.form.get('subcategory_notes'),
+            )
+            db.session.commit()
+            flash('Sub-category updated.', 'success')
+        except ValueError as exc:
+            db.session.rollback()
+            flash(str(exc), 'danger')
+        return _back()
+
+    if request.method == 'POST' and action in ('delete_entry', 'void_entry'):
         entry_id = request.form.get('entry_id', type=int)
         entry = CashFlowEntry.query.get(entry_id) if entry_id else None
-        if not entry:
-            flash('Entry not found.', 'warning')
-        else:
-            if entry.account_tx_id:
-                tx = AccountTransaction.query.get(entry.account_tx_id)
-                if tx and not tx.is_void:
-                    if tx.to_account_id:
-                        a = Account.query.get(tx.to_account_id)
-                        if a:
-                            a.balance = float(a.balance or 0) - float(tx.amount or 0)
-                    if tx.from_account_id:
-                        a = Account.query.get(tx.from_account_id)
-                        if a:
-                            a.balance = float(a.balance or 0) + float(tx.amount or 0)
-                    db.session.delete(tx)
-            db.session.delete(entry)
-            db.session.commit()
-            audit_log(current_user, 'cash_flow.entry.delete', f'id={entry_id}')
-            flash('Cash flow entry deleted and account balance corrected.', 'success')
-        return redirect(url_for('cash_flow', from_date=from_date, to_date=to_date, filter_type=filter_type))
-
-    if request.method == 'POST' and action == 'record_movement':
-        direction = (request.form.get('direction') or '').strip().lower()
-        amount = _money_round(request.form.get('amount', 0))
-        account_id = request.form.get('cash_account_id', type=int)
-        description = (request.form.get('description') or '').strip()
-        note = (request.form.get('movement_note') or '').strip()
-        date_raw = (request.form.get('movement_date') or '').strip()
-        category_id = request.form.get('category_id', type=int)
-        category_name = (request.form.get('category_name') or '').strip()
-        subcategory_id = request.form.get('subcategory_id', type=int)
-        subcategory_name = (request.form.get('subcategory_name') or '').strip()
-        party_id = request.form.get('party_id', type=int)
-        party_name = (request.form.get('party_name') or '').strip()
-        party_type = (request.form.get('party_type') or 'other').strip().lower()
         try:
-            posted = datetime.strptime(date_raw, '%Y-%m-%dT%H:%M') if date_raw else pk_now()
-        except Exception:
-            posted = pk_now()
-        acc = Account.query.get(account_id) if account_id else None
-        if acc and (acc.category or '').lower() not in ('cash', 'bank'):
-            acc = None
-        if amount <= 0:
-            flash('Amount must be greater than zero.', 'danger')
-        elif not acc or not acc.is_active:
-            flash('Select a company cash/bank account from Accounts. New accounts cannot be created on Cash Flow.', 'danger')
-        elif direction not in ('in', 'out'):
-            flash('Choose Received or Spent.', 'danger')
-        else:
-            cat = CashFlowCategory.query.get(category_id) if category_id else None
-            if not cat:
-                cat = _find_or_create_cf_category(category_name, direction)
-            sub = CashFlowSubcategory.query.get(subcategory_id) if subcategory_id else None
-            if not sub:
-                sub = _find_or_create_cf_subcategory(cat, subcategory_name)
-            party = CashFlowParty.query.get(party_id) if party_id else None
-            if not party:
-                party = _find_or_create_cf_party(party_name, party_type)
-            if party:
-                party_name = party.name
-                party_type = party.party_type or party_type
-            marker = '[SRC:CashFlow]'
-            label = description or (cat.name if cat else ('Cash received' if direction == 'in' else 'Cash spent'))
-            if party_name:
-                label = f'{label} — {party_name}'
-            if direction == 'in':
-                acc.balance = float(acc.balance or 0) + amount
-                tx = AccountTransaction(
-                    from_account_id=None, to_account_id=acc.id, amount=amount,
-                    description=label, note=' '.join(x for x in [note, marker] if x).strip(),
-                    transaction_type='Receipt', date_posted=posted,
-                )
-            else:
-                if float(acc.balance or 0) < amount:
-                    flash(f'Insufficient balance in {acc.name}.', 'danger')
-                    return redirect(url_for('cash_flow', from_date=from_date, to_date=to_date, filter_type=filter_type))
-                acc.balance = float(acc.balance or 0) - amount
-                tx = AccountTransaction(
-                    from_account_id=acc.id, to_account_id=None, amount=amount,
-                    description=label, note=' '.join(x for x in [note, marker] if x).strip(),
-                    transaction_type='Expense', date_posted=posted,
-                )
-            db.session.add(tx)
-            db.session.flush()
-            db.session.add(CashFlowEntry(
-                direction=direction, amount=amount, account_id=acc.id,
-                category_id=cat.id if cat else None,
-                subcategory_id=sub.id if sub else None,
-                party_id=party.id if party else None,
-                party_name=party_name or None, party_type=party_type or None,
-                description=description or label, note=note or None,
-                date_posted=posted, created_by=_current_username(),
-                account_tx_id=tx.id, is_void=False,
-            ))
+            void_manual_cash_flow_entry(
+                entry, reason=request.form.get('void_reason'), actor=current_user,
+            )
             db.session.commit()
-            audit_log(current_user, 'cash_flow.record', f'dir={direction}, amount={amount}')
-            flash(f'{"Received" if direction == "in" else "Spent"} Rs. {amount:,.0f} recorded.', 'success')
-        return redirect(url_for('cash_flow', from_date=from_date, to_date=to_date, filter_type=filter_type))
+            audit_log(current_user, 'cash_flow.entry.void', f'id={entry_id}')
+            flash('Transaction voided. The financial effect was reversed and the history was kept.', 'success')
+        except ValueError as exc:
+            db.session.rollback()
+            flash(str(exc), 'danger')
+        except Exception:
+            db.session.rollback()
+            logger.exception('Cash flow void failed')
+            flash('Unable to void transaction.', 'danger')
+        return _back()
+
+    if request.method == 'POST' and action == 'restore_entry':
+        entry_id = request.form.get('entry_id', type=int)
+        entry = CashFlowEntry.query.get(entry_id) if entry_id else None
+        try:
+            restore_manual_cash_flow_entry(
+                entry, reason=request.form.get('restore_reason'), actor=current_user,
+            )
+            db.session.commit()
+            audit_log(current_user, 'cash_flow.entry.restore', f'id={entry_id}')
+            flash('Transaction restored and the account effect was re-applied.', 'success')
+        except ValueError as exc:
+            db.session.rollback()
+            flash(str(exc), 'danger')
+        except Exception:
+            db.session.rollback()
+            logger.exception('Cash flow restore failed')
+            flash('Unable to restore transaction.', 'danger')
+        return _back()
+
+    if request.method == 'POST' and action in ('record_movement', 'edit_entry'):
+        entry_id = request.form.get('entry_id', type=int) if action == 'edit_entry' else None
+        payload = dict(
+            direction=request.form.get('direction'),
+            amount=request.form.get('amount', 0),
+            account_id=request.form.get('cash_account_id', type=int) or request.form.get('from_account_id', type=int),
+            destination_account_id=request.form.get('to_account_id', type=int),
+            category_id=request.form.get('category_id', type=int),
+            category_name=request.form.get('category_name'),
+            subcategory_id=request.form.get('subcategory_id', type=int),
+            subcategory_name=request.form.get('subcategory_name'),
+            party_id=request.form.get('party_id', type=int),
+            party_name=request.form.get('party_name'),
+            party_type=request.form.get('party_type') or 'other',
+            description=request.form.get('description'),
+            note=request.form.get('movement_note') or request.form.get('note'),
+            reference=request.form.get('reference'),
+            actor=current_user,
+            create_missing=True,
+        )
+        date_raw = (request.form.get('movement_date') or '').strip()
+        try:
+            payload['date_posted'] = datetime.strptime(date_raw, '%Y-%m-%dT%H:%M') if date_raw else pk_now()
+        except Exception:
+            payload['date_posted'] = pk_now()
+        try:
+            if action == 'edit_entry':
+                entry = CashFlowEntry.query.get(entry_id) if entry_id else None
+                update_manual_cash_flow_entry(
+                    entry, reason=request.form.get('edit_reason'), **payload,
+                )
+                db.session.commit()
+                audit_log(current_user, 'cash_flow.entry.edit', f'id={entry_id}')
+                flash('Cash flow transaction updated.', 'success')
+            else:
+                payload['idempotency_key'] = (request.form.get('idempotency_key') or '').strip() or None
+                entry, created = save_manual_cash_flow_entry(**payload)
+                db.session.commit()
+                if created:
+                    audit_log(current_user, 'cash_flow.record', f'dir={entry.direction}, amount={entry.amount}')
+                    flash(f'{_cf_type_label(entry.direction)} Rs. {float(entry.amount or 0):,.0f} recorded.', 'success')
+                else:
+                    flash('This transaction was already saved.', 'info')
+        except ValueError as exc:
+            db.session.rollback()
+            flash(str(exc), 'danger')
+        except Exception:
+            db.session.rollback()
+            logger.exception('Cash flow save failed')
+            flash('Unable to save cash flow transaction.', 'danger')
+        return _back()
 
     if request.method == 'POST' and action in ('set_opening_override', 'clear_opening_override', 'reset_fresh_start'):
         if action == 'reset_fresh_start':
@@ -291,10 +441,12 @@ def cash_flow():
         from_date_dt = datetime.strptime(from_date, '%Y-%m-%d').date()
     except Exception:
         from_date_dt = fresh_start_dt
+        from_date = fresh_start_date
     try:
         to_date_dt = datetime.strptime(to_date, '%Y-%m-%d').date()
     except Exception:
         to_date_dt = fresh_start_dt
+        to_date = fresh_start_date
 
     fresh_start_clamped = False
     if from_date_dt < fresh_start_dt:
@@ -305,7 +457,6 @@ def cash_flow():
         to_date_dt = from_date_dt
         to_date = from_date_dt.strftime('%Y-%m-%d')
 
-    # Opening balance: user-entered OR authoritative carry-forward from prior physical cash reconciliation.
     today_opening_override = _cash_flow_today_opening_override(fresh_start_date)
     if opening_balance_input:
         try:
@@ -317,296 +468,34 @@ def cash_flow():
     else:
         opening_balance = _automatic_cash_opening_balance(from_date_dt)
 
-    # Build cash-in rows
     fresh_start_cutoff = _cash_flow_fresh_start_cutoff(fresh_start_date)
     hide_existing_today_entries = from_date_dt == fresh_start_dt
-    cash_in_rows = []
-    cash_method_clauses = [
-        func.lower(func.trim(func.coalesce(Payment.method, ''))) == 'cash',
-        func.lower(func.trim(func.coalesce(Payment.method, ''))) == 'cash sale',
-    ]
-    payment_query = Payment.query.filter(
-        Payment.is_void == False,
-        or_(*cash_method_clauses),
-        func.date(Payment.date_posted) >= from_date,
-        func.date(Payment.date_posted) <= to_date
+    posted_after = fresh_start_cutoff if hide_existing_today_entries else None
+
+    filter_account_id = source.get('account_id', type=int)
+    filter_status = (filter_kwargs.get('status') or 'active').strip().lower()
+    all_rows = collect_cash_flow_rows(
+        from_date, to_date,
+        posted_after=posted_after,
+        include_voided=(filter_status in ('voided', 'all')),
     )
-    if hide_existing_today_entries:
-        payment_query = payment_query.filter(Payment.date_posted > fresh_start_cutoff)
-    for p in payment_query.order_by(Payment.date_posted).all():
-        cash_in_rows.append({
-            'date': p.date_posted.date() if hasattr(p.date_posted, 'date') else p.date_posted,
-            'sort_dt': p.date_posted,
-            'reference': p.manual_bill_no or p.auto_bill_no or f'PAY-{p.id}',
-            'description': f'Client Payment — {p.client_name or ""}',
-            'cash_in': float(p.amount or 0),
-            'cash_out': 0.0,
-            'origin': 'derived',
-            'origin_label': 'From Accounts · Client Payments',
-            **_empty_row_meta(),
-            'party_name': p.client_name or '',
-            'party_type': 'client',
-            'category': 'Client Payment',
-        })
+    all_rows.sort(key=_cf_sort_key)
 
-    sale_query = DirectSale.query.filter(
-        DirectSale.is_void == False,
-        or_(
-            func.lower(func.trim(func.coalesce(DirectSale.category, ''))) == 'cash',
-            func.lower(func.trim(func.coalesce(DirectSale.category, ''))) == 'cash sale',
-            func.lower(func.trim(func.coalesce(DirectSale.payment_method, ''))) == 'cash',
-            func.lower(func.trim(func.coalesce(DirectSale.payment_method, ''))) == 'cash sale',
-        ),
-        DirectSale.paid_amount > 0,
-        func.date(DirectSale.date_posted) >= from_date,
-        func.date(DirectSale.date_posted) <= to_date
-    )
-    if hide_existing_today_entries:
-        sale_query = sale_query.filter(DirectSale.date_posted > fresh_start_cutoff)
-    for s in sale_query.order_by(DirectSale.date_posted).all():
-        cash_in_rows.append({
-            'date': s.date_posted.date() if hasattr(s.date_posted, 'date') else s.date_posted,
-            'sort_dt': s.date_posted,
-            'reference': s.manual_bill_no or s.auto_bill_no or f'DS-{s.id}',
-            'description': f'Cash Sale — {s.client_name or ""}',
-            'cash_in': float(s.paid_amount or 0),
-            'cash_out': 0.0,
-            'origin': 'derived',
-            'origin_label': 'From Sales',
-            **_empty_row_meta(),
-            'party_name': s.client_name or '',
-            'party_type': 'client',
-            'category': 'Cash Sale',
-        })
+    display_rows = filter_cash_flow_rows(all_rows, {
+        **filter_kwargs,
+        'account_id': filter_account_id,
+        'filter_type': filter_type,
+        'status': filter_status,
+    })
+    if export_scope == 'all' and (export_csv == '1' or export_pdf == '1'):
+        display_rows = list(all_rows)
+        if filter_status in ('active', 'voided'):
+            display_rows = [r for r in display_rows if (r.get('status') or 'active') == filter_status]
 
-    # Build cash-out rows
-    cash_out_rows = []
-    supplier_payment_query = SupplierPayment.query.filter(
-        SupplierPayment.is_void == False,
-        func.date(SupplierPayment.date_posted) >= from_date,
-        func.date(SupplierPayment.date_posted) <= to_date
-    )
-    if hide_existing_today_entries:
-        supplier_payment_query = supplier_payment_query.filter(SupplierPayment.date_posted > fresh_start_cutoff)
-    for sp in supplier_payment_query.order_by(SupplierPayment.date_posted).all():
-        supplier_name = sp.supplier.name if sp.supplier else ''
-        cash_out_rows.append({
-            'date': sp.date_posted.date() if hasattr(sp.date_posted, 'date') else sp.date_posted,
-            'sort_dt': sp.date_posted,
-            'reference': sp.manual_bill_no or sp.auto_bill_no or f'SUP-{sp.id}',
-            'description': f'Supplier Payment — {supplier_name}',
-            'cash_in': 0.0,
-            'cash_out': float(sp.amount or 0),
-            'origin': 'derived',
-            'origin_label': 'From Accounts · Supplier Payments',
-            **_empty_row_meta(),
-            'party_name': supplier_name,
-            'party_type': 'supplier',
-            'category': 'Supplier Payment',
-        })
-
-    # Use the FBM drawer cash account as the source of truth for cash flow transfers.
-    fbm_drawer_account = Account.query.filter(
-        func.lower(func.trim(Account.name)) == 'fbm drawer cash'
-    ).first()
-    if not fbm_drawer_account:
-        fbm_drawer_account = Account.query.filter(
-            Account.name.ilike('%fbm drawer cash%')
-        ).first()
-    fbm_drawer_account_id = fbm_drawer_account.id if fbm_drawer_account else None
-
-    # Include general expenses and FBM drawer transfers from AccountTransaction.
-    account_tx_query = AccountTransaction.query.filter(
-        AccountTransaction.is_void == False,
-        AccountTransaction.transaction_type.in_(['Expense', 'Payment', 'Driver Payment', 'Transfer', 'Receipt']),
-        func.date(AccountTransaction.date_posted) >= from_date,
-        func.date(AccountTransaction.date_posted) <= to_date
-    )
-    if hide_existing_today_entries:
-        account_tx_query = account_tx_query.filter(AccountTransaction.date_posted > fresh_start_cutoff)
-    def _tx_note(tx):
-        return (tx.note or '')
-
-    def _is_derived_account_tx(tx):
-        n = _tx_note(tx).upper()
-        # Source-document receipts/payments are rendered from their source
-        # tables above.  Including these AccountTransaction mirrors would
-        # show the same cash movement twice in Cash Flow.
-        return any(marker in n for marker in (
-            '[SRC:BOOKING:',
-            '[SRC:DIRECTSALE:',
-            '[SRC:PAYMENT:',
-            '[SRC:SUPPLIERPAYMENT:',
-            '[SRC:CLIENTREFUND:',
-        ))
-
-    for tx in account_tx_query.all():
-        note_u = _tx_note(tx).upper()
-        recorded = '[SRC:CASHFLOW]' in note_u
-        origin = 'recorded' if recorded else 'derived'
-        origin_label = 'Recorded on Cash Flow' if recorded else 'From Accounts'
-
-        if _is_derived_account_tx(tx) or recorded:
-            continue
-
-        if tx.transaction_type == 'Transfer' and fbm_drawer_account_id is not None:
-            if tx.to_account_id == fbm_drawer_account_id and tx.from_account_id != fbm_drawer_account_id:
-                cash_in_rows.append({
-                    'date': tx.date_posted.date() if hasattr(tx.date_posted, 'date') else tx.date_posted,
-                    'sort_dt': tx.date_posted,
-                    'reference': f'TX-{tx.id}',
-                    'description': tx.description or 'Transfer to FBM DRAWER CASH',
-                    'cash_in': float(tx.amount or 0),
-                    'cash_out': 0.0,
-                    'origin': origin,
-                    'origin_label': origin_label,
-                    **_empty_row_meta(),
-                    'category': 'Transfer',
-                })
-                continue
-            if tx.from_account_id == fbm_drawer_account_id and tx.to_account_id != fbm_drawer_account_id:
-                cash_out_rows.append({
-                    'date': tx.date_posted.date() if hasattr(tx.date_posted, 'date') else tx.date_posted,
-                    'sort_dt': tx.date_posted,
-                    'reference': f'TX-{tx.id}',
-                    'description': tx.description or 'Transfer from FBM DRAWER CASH',
-                    'cash_in': 0.0,
-                    'cash_out': float(tx.amount or 0),
-                    'origin': origin,
-                    'origin_label': origin_label,
-                    **_empty_row_meta(),
-                    'category': 'Transfer',
-                })
-                continue
-
-        if tx.transaction_type == 'Receipt' and tx.to_account_id is not None:
-            acc = Account.query.get(tx.to_account_id)
-            if acc and (acc.category or '').lower() in ('cash', 'bank'):
-                cash_in_rows.append({
-                    'date': tx.date_posted.date() if hasattr(tx.date_posted, 'date') else tx.date_posted,
-                    'reference': f'TX-{tx.id}',
-                    'description': tx.description or 'Cash received',
-                    'cash_in': float(tx.amount or 0),
-                    'cash_out': 0.0,
-                    'origin': origin,
-                    'origin_label': origin_label if recorded else 'From Accounts · Other receive',
-                })
-            continue
-
-        if tx.transaction_type in ['Expense', 'Payment', 'Driver Payment'] and tx.from_account_id is not None:
-            acc = Account.query.get(tx.from_account_id)
-            if acc and (acc.category or '').lower() in ('cash', 'bank'):
-                is_driver = tx.transaction_type == 'Driver Payment'
-                row = {
-                    'date': tx.date_posted.date() if hasattr(tx.date_posted, 'date') else tx.date_posted,
-                    'reference': f'TX-{tx.id}',
-                    'description': tx.description or ('Driver service payment' if is_driver else 'Expense'),
-                    'cash_in': 0.0,
-                    'cash_out': float(tx.amount or 0),
-                    'origin': origin,
-                    'origin_label': origin_label if recorded else (
-                        'From Accounts · Driver Services' if is_driver else 'From Accounts · Expense'
-                    ),
-                }
-                if is_driver:
-                    # Same authoritative transaction, categorised so it lands in
-                    # the Daily Transaction Breakdown and expense reporting.
-                    row.update({
-                        'sort_dt': tx.date_posted,
-                        **_empty_row_meta(),
-                        'category': 'Driver / Delivery Services',
-                        'party_type': 'delivery_person',
-                    })
-                cash_out_rows.append(row)
-
-    recorded_query = CashFlowEntry.query.filter(
-        CashFlowEntry.is_void == False,
-        func.date(CashFlowEntry.date_posted) >= from_date,
-        func.date(CashFlowEntry.date_posted) <= to_date,
-    )
-    if hide_existing_today_entries:
-        recorded_query = recorded_query.filter(CashFlowEntry.date_posted > fresh_start_cutoff)
-    for e in recorded_query.all():
-        acc_name = e.account.name if e.account else ''
-        cat_name = e.category.name if e.category else ''
-        sub_name = e.subcategory.name if e.subcategory else ''
-        row = {
-            'date': e.date_posted.date() if hasattr(e.date_posted, 'date') else e.date_posted,
-            'sort_dt': e.date_posted,
-            'reference': f'CF-{e.id}',
-            'description': e.description or cat_name or 'Cash movement',
-            'cash_in': float(e.amount or 0) if e.direction == 'in' else 0.0,
-            'cash_out': float(e.amount or 0) if e.direction == 'out' else 0.0,
-            'origin': 'recorded',
-            'origin_label': 'Recorded on Cash Flow',
-            'category': cat_name,
-            'subcategory': sub_name,
-            'party_name': e.party_name or (e.party.name if e.party else ''),
-            'party_type': e.party_type or (e.party.party_type if e.party else ''),
-            'account_name': acc_name,
-            'entry_id': e.id,
-        }
-        if e.direction == 'in':
-            cash_in_rows.append(row)
-        else:
-            cash_out_rows.append(row)
-
-    # Merge and sort
-    all_rows = cash_in_rows + cash_out_rows
-    def _sort_key(r):
-        d = r.get('sort_dt') or r.get('date')
-        if hasattr(d, 'timestamp'):
-            return (d.timestamp(), r.get('reference') or '')
-        try:
-            return (datetime.combine(d, datetime.min.time()).timestamp(), r.get('reference') or '')
-        except Exception:
-            return (0, r.get('reference') or '')
-    all_rows.sort(key=_sort_key)
-
-    # Apply filter
-    if filter_type == 'cash_in':
-        display_rows = [r for r in all_rows if r['cash_in'] > 0]
-    elif filter_type == 'cash_out':
-        display_rows = [r for r in all_rows if r['cash_out'] > 0]
-    else:
-        display_rows = all_rows
-
-    if filter_origin in ('derived', 'recorded'):
-        display_rows = [r for r in display_rows if r.get('origin') == filter_origin]
-    if filter_category:
-        needle = filter_category.lower()
-        display_rows = [r for r in display_rows if needle in (r.get('category') or '').lower()]
-    if filter_subcategory:
-        needle = filter_subcategory.lower()
-        display_rows = [r for r in display_rows if needle in (r.get('subcategory') or '').lower()]
-    if filter_party_type:
-        display_rows = [r for r in display_rows if (r.get('party_type') or '').lower() == filter_party_type]
-    if filter_party:
-        needle = filter_party.lower()
-        display_rows = [r for r in display_rows if needle in (r.get('party_name') or '').lower()]
-    if filter_account_id:
-        acc_obj = Account.query.get(filter_account_id)
-        acc_name = (acc_obj.name if acc_obj else '').lower()
-        display_rows = [r for r in display_rows if acc_name and acc_name in (r.get('account_name') or '').lower()]
-    if filter_q:
-        needle = filter_q.lower()
-        display_rows = [r for r in display_rows if needle in ' '.join([
-            str(r.get('description') or ''),
-            str(r.get('party_name') or ''),
-            str(r.get('category') or ''),
-            str(r.get('subcategory') or ''),
-            str(r.get('reference') or ''),
-        ]).lower()]
-
-    # Compute running balance
-    running = opening_balance
-    for r in display_rows:
-        running += r['cash_in'] - r['cash_out']
-        r['running_balance'] = running
-    closing_balance = running
-
-    total_cash_in = sum(r['cash_in'] for r in display_rows)
-    total_cash_out = sum(r['cash_out'] for r in display_rows)
+    closing_balance = apply_running_balance(display_rows, opening_balance, account_id=filter_account_id)
+    summary = summarize_cash_flow_rows(display_rows, account_id=filter_account_id)
+    total_cash_in = summary['total_cash_in']
+    total_cash_out = summary['total_cash_out']
 
     try:
         adjustment_date_dt = datetime.strptime(adjustment_date_input, '%Y-%m-%d').date()
@@ -614,7 +503,12 @@ def cash_flow():
         adjustment_date_dt = datetime.strptime(to_date, '%Y-%m-%d').date()
 
     adjustment_entry = CashFlowDifferenceAdjustment.query.filter_by(adjustment_date=adjustment_date_dt).first()
-    if request.method == 'POST':
+    if request.method == 'POST' and action not in (
+        'add_category', 'add_subcategory', 'add_party', 'disable_category', 'disable_subcategory',
+        'enable_category', 'enable_subcategory', 'update_party', 'disable_party', 'enable_party',
+        'rename_category', 'rename_subcategory', 'delete_entry', 'void_entry', 'restore_entry',
+        'record_movement', 'edit_entry', 'set_opening_override', 'clear_opening_override', 'reset_fresh_start',
+    ):
         if action == 'delete':
             if adjustment_entry:
                 audit = CashFlowReconciliationAudit(
@@ -696,74 +590,73 @@ def cash_flow():
     reconciliation_reason = (adjustment_entry.reason or adjustment_entry.note or '') if adjustment_entry else ''
     adjusted_closing_balance = physical_cash_available if physical_cash_available is not None else closing_balance
 
-    if export_pdf == '1':
-        rendered = render_template('cash_flow.html',
-            rows=display_rows,
-            from_date=from_date, to_date=to_date,
-            filter_type=filter_type,
-            opening_balance=opening_balance,
-            opening_balance_input=opening_balance_input,
-            closing_balance=closing_balance,
-            adjustment_amount=adjustment_amount,
-            physical_cash_available=physical_cash_available,
-            reconciliation_reason=reconciliation_reason,
-            adjusted_closing_balance=adjusted_closing_balance,
-            adjustment_date_input=adjustment_date_input,
-            total_cash_in=total_cash_in,
-            total_cash_out=total_cash_out,
-            generated_at=pk_now().strftime('%Y-%m-%d %H:%M'),
-            pdf_mode=True,
-            settings=None,
-            fresh_start_date=fresh_start_date,
-            fresh_start_cutoff=fresh_start_cutoff,
-            fresh_start_clamped=fresh_start_clamped,
-            today_opening_override=today_opening_override,
-            is_fresh_start_view=(from_date_dt == fresh_start_dt),
-        )
-        pdf_resp = _try_render_weasy_pdf(rendered, f'cash_flow_{from_date}_{to_date}.pdf')
-        if pdf_resp:
-            return pdf_resp
-        return Response(rendered, content_type='text/html')
+    if export_csv == '1':
+        buf = io.StringIO()
+        import csv
+        writer = csv.writer(buf)
+        writer.writerow([
+            'Date', 'Type', 'Account', 'Category', 'Subcategory', 'Party',
+            'Amount', 'Received', 'Spent', 'Transfer', 'Description', 'Notes',
+            'Reference', 'Source', 'Created By', 'Status',
+        ])
+        for r in display_rows:
+            writer.writerow([
+                r.get('date'), r.get('tx_type_label'), r.get('account_display'),
+                r.get('category'), r.get('subcategory'), r.get('party_name'),
+                r.get('amount'), r.get('cash_in') or '', r.get('cash_out') or '',
+                r.get('transfer_amount') or '', r.get('description'), r.get('note'),
+                r.get('reference'), r.get('origin_label'), r.get('created_by'),
+                r.get('status'),
+            ])
+        resp = make_response(buf.getvalue())
+        resp.headers['Content-Type'] = 'text/csv; charset=utf-8'
+        resp.headers['Content-Disposition'] = f'attachment; filename=cash_flow_{from_date}_{to_date}.csv'
+        return resp
 
-    cash_accounts = [
-        a for a in Account.query.filter(func.coalesce(Account.is_active, True) == True).order_by(Account.name.asc()).all()
-        if (a.category or '').lower() in ('cash', 'bank')
-    ]
-    cf_categories = CashFlowCategory.query.filter_by(is_active=True).order_by(CashFlowCategory.sort_order, CashFlowCategory.name).all()
-    cf_subcategories = CashFlowSubcategory.query.filter_by(is_active=True).order_by(CashFlowSubcategory.name).all()
+    cash_accounts = _cf_company_accounts(active_only=True)
+    cf_categories = CashFlowCategory.query.order_by(CashFlowCategory.sort_order, CashFlowCategory.name).all()
+    cf_subcategories = CashFlowSubcategory.query.order_by(CashFlowSubcategory.name).all()
     cf_parties = CashFlowParty.query.filter_by(is_active=True).order_by(CashFlowParty.name).all()
-    breakdown_cat, breakdown_party, breakdown_account = {}, {}, {}
-    for r in display_rows:
-        ck = (r.get('category') or '—').strip() or '—'
-        breakdown_cat.setdefault(ck, {'in': 0.0, 'out': 0.0})
-        breakdown_cat[ck]['in'] += float(r.get('cash_in') or 0)
-        breakdown_cat[ck]['out'] += float(r.get('cash_out') or 0)
-        pk = ((r.get('party_type') or '') + ' · ' + (r.get('party_name') or '—')).strip(' ·')
-        breakdown_party.setdefault(pk, {'in': 0.0, 'out': 0.0})
-        breakdown_party[pk]['in'] += float(r.get('cash_in') or 0)
-        breakdown_party[pk]['out'] += float(r.get('cash_out') or 0)
-        ak = (r.get('account_name') or '—').strip() or '—'
-        breakdown_account.setdefault(ak, {'in': 0.0, 'out': 0.0})
-        breakdown_account[ak]['in'] += float(r.get('cash_in') or 0)
-        breakdown_account[ak]['out'] += float(r.get('cash_out') or 0)
+    cf_parties_all = CashFlowParty.query.order_by(CashFlowParty.name).all()
+    created_by_options = sorted({
+        (r.get('created_by') or '').strip()
+        for r in all_rows
+        if (r.get('created_by') or '').strip()
+    })
+    account_options = [{'id': a.id, 'label': _cf_account_label(a)} for a in cash_accounts]
+    source_options = [('all', 'All'), ('manual', 'Manual'), ('system', 'System-generated')]
+    for key, label in CF_SOURCE_LABELS.items():
+        if key == 'MANUAL_CASH_FLOW':
+            continue
+        source_options.append((key.lower(), label))
 
-    return render_template('cash_flow.html',
+    common = dict(
         rows=display_rows,
         cash_accounts=cash_accounts,
+        account_options=account_options,
         cf_categories=cf_categories,
         cf_subcategories=cf_subcategories,
         cf_parties=cf_parties,
-        party_types=PARTY_TYPES,
-        breakdown_cat=breakdown_cat,
-        breakdown_party=breakdown_party,
-        breakdown_account=breakdown_account,
-        filter_origin=filter_origin,
-        filter_category=filter_category,
-        filter_subcategory=filter_subcategory,
-        filter_party_type=filter_party_type,
-        filter_party=filter_party,
+        party_types=CF_PARTY_TYPES,
+        source_options=source_options,
+        created_by_options=created_by_options,
+        breakdown_cat=summary['breakdown_cat'],
+        breakdown_party=summary['breakdown_party'],
+        breakdown_account=summary['breakdown_account'],
+        filter_origin=filter_kwargs['origin'],
+        filter_category=filter_kwargs['category'],
+        filter_subcategory=filter_kwargs['subcategory'],
+        filter_party_type=filter_kwargs['party_type'],
+        filter_party=filter_kwargs['party'],
         filter_account_id=filter_account_id,
-        filter_q=filter_q,
+        filter_q=filter_kwargs['q'],
+        filter_notes=filter_kwargs['notes'],
+        filter_reference=filter_kwargs['reference'],
+        filter_description=filter_kwargs['description'],
+        filter_created_by=filter_kwargs['created_by'],
+        filter_status=filter_status,
+        filter_amount_min=filter_kwargs['amount_min'],
+        filter_amount_max=filter_kwargs['amount_max'],
         from_date=from_date, to_date=to_date,
         filter_type=filter_type,
         opening_balance=opening_balance,
@@ -777,8 +670,9 @@ def cash_flow():
         closing_balance=closing_balance,
         total_cash_in=total_cash_in,
         total_cash_out=total_cash_out,
+        total_transfer_in=summary['total_transfer_in'],
+        total_transfer_out=summary['total_transfer_out'],
         generated_at=pk_now().strftime('%Y-%m-%d %H:%M'),
-        pdf_mode=False,
         settings=None,
         fresh_start_date=fresh_start_date,
         fresh_start_cutoff=fresh_start_cutoff,
@@ -786,6 +680,15 @@ def cash_flow():
         today_opening_override=today_opening_override,
         is_fresh_start_view=(from_date_dt == fresh_start_dt),
     )
+
+    if export_pdf == '1':
+        rendered = render_template('cash_flow.html', pdf_mode=True, **common)
+        pdf_resp = _try_render_weasy_pdf(rendered, f'cash_flow_{from_date}_{to_date}.pdf')
+        if pdf_resp:
+            return pdf_resp
+        return Response(rendered, content_type='text/html')
+
+    return render_template('cash_flow.html', pdf_mode=False, **common)
 
 
 @bp.route('/cash_flow_differences')
@@ -862,5 +765,3 @@ def cash_flow_reconciliation_detail(rec_id):
         reconciliation=reconciliation,
         audit_trail=audit_trail,
     )
-
-

@@ -57,12 +57,18 @@ def edit_ledger_transaction(trans_type, trans_id):
         
         # Update booking fields
         booking.manual_bill_no = (request.form.get('manual_bill_no', '') or '').strip()
-        booking.discount, booking.discount_reason = _parse_discount_fields(
-            request.form.get('discount', 0),
-            request.form.get('discount_reason', ''),
-            label='Booking discount',
-            require_reason=False
-        )
+        try:
+            booking.discount, booking.discount_reason = _parse_discount_fields(
+                request.form.get('discount', 0),
+                request.form.get('discount_reason', ''),
+                label='Booking discount',
+                require_reason=False
+            )
+        except ValueError as ve:
+            flash(str(ve), 'danger')
+            if client:
+                return redirect(url_for('financial_ledger', client_id=client.id))
+            return redirect(request.referrer or url_for('index'))
         booking.note = request.form.get('note', '').strip()
         
         date_str = (request.form.get('date_posted') or '').strip()

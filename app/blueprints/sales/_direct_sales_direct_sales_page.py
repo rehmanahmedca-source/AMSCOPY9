@@ -27,7 +27,24 @@ def direct_sales_page():
         sales_q = sales_q.filter(DirectSale.is_void == False)
 
     if filter_client:
-        sales_q = sales_q.filter(DirectSale.client_name.ilike(f'%{filter_client}%'))
+        # The client combobox submits the master client code, while historical
+        # sales are displayed/stored by name (and older rows may have no code).
+        # Resolve a selected client and match both identities so choosing a
+        # client returns the same transactions shown in its ledger.
+        resolved_filter_client = get_client_by_input(filter_client)
+        if resolved_filter_client:
+            client_code = (resolved_filter_client.code or '').strip().lower()
+            client_name = (resolved_filter_client.name or '').strip().lower()
+            sales_q = sales_q.filter(or_(
+                func.lower(func.trim(func.coalesce(DirectSale.client_code, ''))) == client_code,
+                func.lower(func.trim(func.coalesce(DirectSale.client_name, ''))) == client_name,
+            ))
+        else:
+            # Preserve free-text searching, including partial client codes.
+            sales_q = sales_q.filter(or_(
+                DirectSale.client_name.ilike(f'%{filter_client}%'),
+                DirectSale.client_code.ilike(f'%{filter_client}%'),
+            ))
 
     if filter_bill_no:
         sales_q = sales_q.filter(or_(

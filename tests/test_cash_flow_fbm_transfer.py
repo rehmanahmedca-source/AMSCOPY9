@@ -23,7 +23,7 @@ from models import Account, AccountTransaction, DirectSale
 def get_or_create_account(name, category='cash', account_type='company'):
     acc = Account.query.filter(Account.name == name).first()
     if not acc:
-        acc = Account(name=name, category=category, account_type=account_type, balance=0.0)
+        acc = Account(name=name, category=category, account_type=account_type, type=account_type, balance=0.0)
         db.session.add(acc)
         db.session.flush()
     return acc
@@ -32,6 +32,7 @@ def get_or_create_account(name, category='cash', account_type='company'):
 @pytest.fixture
 def client_app():
     with app.app_context():
+        db.drop_all()
         db.create_all()
         yield
 
@@ -112,9 +113,6 @@ def test_fbm_drawer_transfer_is_included_and_not_double_counted(client_app, monk
     app.config['LOGIN_DISABLED'] = True
     try:
         with app.test_request_context(f'/cash_flow?from_date={today}&to_date={today}'):
-            # Cash Flow deliberately hides rows created before the user's
-            # fresh-start cutoff.  Set the cutoff before invoking the view so
-            # this isolated test exercises the rows it just created.
             from flask import session
             session['cash_flow_fresh_start_cutoff'] = {
                 'date': today,
@@ -130,23 +128,30 @@ def test_fbm_drawer_transfer_is_included_and_not_double_counted(client_app, monk
     references = [row['reference'] for row in rows]
     descriptions = [row['description'] for row in rows]
 
-    assert f'TX-{tx_in.id}' in references, 'FBM drawer cash-in transfer row is missing from cash flow.'
-    assert f'TX-{tx_out.id}' in references, 'FBM drawer cash-out transfer row is missing from cash flow.'
-    assert f'TX-{tx_nonfbm.id}' not in references, 'Non-FBM transfer should not affect cash flow.'
+    assert f'TX-{tx_in.id}' in references, 'Company-account transfer in is missing from cash flow.'
+    assert f'TX-{tx_out.id}' in references, 'Company-account transfer out is missing from cash flow.'
+    assert f'TX-{tx_nonfbm.id}' in references, 'Transfers between company cash/bank accounts must appear as Transfer rows.'
     assert any('Cash Flow Sale Test' in desc for desc in descriptions), 'Existing cash sale must still appear in cash flow.'
     assert any('Refund Flow Test' in desc for desc in descriptions), 'Existing refund payment must still appear in cash flow.'
     assert f'TX-{linked_sale_tx.id}' not in references, 'Direct-sale AccountTransaction mirror must not duplicate the sale row.'
 
-    assert sum(row['cash_in'] for row in rows if row['reference'] == f'TX-{tx_in.id}') == 60000.0
-    assert sum(row['cash_out'] for row in rows if row['reference'] == f'TX-{tx_out.id}') == 50000.0
+    tx_in_rows = [r for r in rows if r['reference'] == f'TX-{tx_in.id}']
+    tx_out_rows = [r for r in rows if r['reference'] == f'TX-{tx_out.id}']
+    assert len(tx_in_rows) == 1
+    assert len(tx_out_rows) == 1
+    assert tx_in_rows[0]['type'] == 'transfer'
+    assert tx_out_rows[0]['type'] == 'transfer'
+    assert tx_in_rows[0]['cash_in'] == 0
+    assert tx_in_rows[0]['cash_out'] == 0
+    assert tx_in_rows[0]['transfer_amount'] == 60000.0
+    assert tx_out_rows[0]['transfer_amount'] == 50000.0
 
     total_cash_in = captured.get('total_cash_in')
     total_cash_out = captured.get('total_cash_out')
     opening_balance = captured.get('opening_balance')
     closing_balance = captured.get('closing_balance')
     assert closing_balance == pytest.approx(opening_balance + total_cash_in - total_cash_out, rel=1e-9)
-
-    tx_in_rows = [r for r in rows if r['reference'] == f'TX-{tx_in.id}']
-    tx_out_rows = [r for r in rows if r['reference'] == f'TX-{tx_out.id}']
-    assert len(tx_in_rows) == 1, 'FBM cash-in transfer should appear exactly once.'
-    assert len(tx_out_rows) == 1, 'FBM cash-out transfer should appear exactly once.'
+    assert sum(r['cash_in'] for r in tx_in_rows) == 0
+    assert sum(r['cash_out'] for r in tx_out_rows) == 0
+    assert any(r['cash_in'] == 11111.0 and 'Cash Flow Sale Test' in r['description'] for r in rows)
+    assert any(r['cash_out'] == 12345.0 and 'Refund Flow Test' in r['description'] for r in rows)

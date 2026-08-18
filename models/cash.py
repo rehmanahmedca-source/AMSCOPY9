@@ -130,14 +130,16 @@ class CashFlowDifferenceAdjustment(db.Model):
 
 
 class CashFlowCategory(db.Model):
-    """User-managed cash-flow categories (Fuel, Food, Loan Received, …)."""
+    """User-managed cash-flow category. Names are configuration, not code."""
     __tablename__ = 'cash_flow_category'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), nullable=False, index=True)
     direction = db.Column(db.String(10), default='both', index=True)  # in | out | both
     is_active = db.Column(db.Boolean, default=True, index=True)
     sort_order = db.Column(db.Integer, default=0)
+    notes = db.Column(db.String(300))
     created_at = db.Column(db.DateTime, default=pk_model_now)
+    updated_at = db.Column(db.DateTime, default=pk_model_now, onupdate=pk_model_now)
 
 
 class CashFlowSubcategory(db.Model):
@@ -146,12 +148,14 @@ class CashFlowSubcategory(db.Model):
     category_id = db.Column(db.Integer, db.ForeignKey('cash_flow_category.id'), nullable=False, index=True)
     name = db.Column(db.String(120), nullable=False, index=True)
     is_active = db.Column(db.Boolean, default=True, index=True)
+    notes = db.Column(db.String(300))
     created_at = db.Column(db.DateTime, default=pk_model_now)
+    updated_at = db.Column(db.DateTime, default=pk_model_now, onupdate=pk_model_now)
     category = db.relationship('CashFlowCategory', backref='subcategories')
 
 
 class CashFlowParty(db.Model):
-    """Reusable names: person, outsider, bank, loan, other."""
+    """Reusable party names for manual cash-flow rows."""
     __tablename__ = 'cash_flow_party'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(160), nullable=False, index=True)
@@ -160,32 +164,60 @@ class CashFlowParty(db.Model):
     note = db.Column(db.String(300))
     is_active = db.Column(db.Boolean, default=True, index=True)
     created_at = db.Column(db.DateTime, default=pk_model_now)
+    updated_at = db.Column(db.DateTime, default=pk_model_now, onupdate=pk_model_now)
 
 
 class CashFlowEntry(db.Model):
-    """Recorded cash in/out that is not a client or supplier payment."""
+    """Manual cash-flow transaction (received / spent / transfer)."""
     __tablename__ = 'cash_flow_entry'
     id = db.Column(db.Integer, primary_key=True)
-    direction = db.Column(db.String(10), nullable=False, index=True)  # in | out
+    direction = db.Column(db.String(10), nullable=False, index=True)  # in | out | transfer
     amount = db.Column(db.Float, default=0)
+    amount_minor = db.Column(db.BigInteger, nullable=True)
     account_id = db.Column(db.Integer, db.ForeignKey('account.id'), nullable=True, index=True)
+    destination_account_id = db.Column(db.Integer, db.ForeignKey('account.id'), nullable=True, index=True)
     category_id = db.Column(db.Integer, db.ForeignKey('cash_flow_category.id'), nullable=True, index=True)
     subcategory_id = db.Column(db.Integer, db.ForeignKey('cash_flow_subcategory.id'), nullable=True, index=True)
     party_id = db.Column(db.Integer, db.ForeignKey('cash_flow_party.id'), nullable=True, index=True)
     party_name = db.Column(db.String(160), index=True)
     party_type = db.Column(db.String(40), index=True)
     description = db.Column(db.String(200))
-    note = db.Column(db.String(500))
+    note = db.Column(db.String(500), index=True)
+    reference = db.Column(db.String(80), index=True)
     date_posted = db.Column(db.DateTime, default=pk_model_now, index=True)
-    created_by = db.Column(db.String(80))
+    created_by = db.Column(db.String(80), index=True)
+    updated_by = db.Column(db.String(80))
+    source_type = db.Column(db.String(50), default='MANUAL_CASH_FLOW', index=True)
+    source_id = db.Column(db.Integer, nullable=True, index=True)
     account_tx_id = db.Column(db.Integer, db.ForeignKey('account_transaction.id'), nullable=True)
     is_void = db.Column(db.Boolean, default=False, index=True)
+    voided_at = db.Column(db.DateTime, nullable=True)
+    voided_by = db.Column(db.String(80))
+    void_reason = db.Column(db.String(300))
+    idempotency_key = db.Column(db.String(64), nullable=True, index=True)
+    revision = db.Column(db.Integer, default=1)
     created_at = db.Column(db.DateTime, default=pk_model_now)
+    updated_at = db.Column(db.DateTime, default=pk_model_now, onupdate=pk_model_now)
 
     account = db.relationship('Account', foreign_keys=[account_id])
+    destination_account = db.relationship('Account', foreign_keys=[destination_account_id])
     category = db.relationship('CashFlowCategory', foreign_keys=[category_id])
     subcategory = db.relationship('CashFlowSubcategory', foreign_keys=[subcategory_id])
     party = db.relationship('CashFlowParty', foreign_keys=[party_id])
+
+
+class CashFlowEntryAudit(db.Model):
+    """Created / edited / voided / restored history for manual cash-flow rows."""
+    __tablename__ = 'cash_flow_entry_audit'
+    id = db.Column(db.Integer, primary_key=True)
+    entry_id = db.Column(db.Integer, db.ForeignKey('cash_flow_entry.id'), nullable=False, index=True)
+    action = db.Column(db.String(20), nullable=False, index=True)
+    before_json = db.Column(db.Text)
+    after_json = db.Column(db.Text)
+    reason = db.Column(db.String(300))
+    changed_by = db.Column(db.String(80))
+    changed_at = db.Column(db.DateTime, default=pk_model_now, index=True)
+    entry = db.relationship('CashFlowEntry', foreign_keys=[entry_id], backref='audit_trail')
 
 
 class AccountReconciliation(db.Model):

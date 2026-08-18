@@ -36,47 +36,54 @@
   <span>Generated: {{ generated_at }}</span>
 </div>
 <div class="summary">
-  <div class="summary-box"><div class="label">Total Cash In</div><div class="value pos">Rs. {{ "{:,.0f}".format(total_cash_in) }}</div></div>
-  <div class="summary-box"><div class="label">Total Cash Out</div><div class="value neg">Rs. {{ "{:,.0f}".format(total_cash_out) }}</div></div>
-  <div class="summary-box"><div class="label">Calculated Closing</div><div class="value neutral">Rs. {{ "{:,.0f}".format(closing_balance) }}</div></div>
+  <div class="summary-box"><div class="label">Total Received</div><div class="value pos">Rs. {{ "{:,.0f}".format(total_cash_in) }}</div></div>
+  <div class="summary-box"><div class="label">Total Spent</div><div class="value neg">Rs. {{ "{:,.0f}".format(total_cash_out) }}</div></div>
+  <div class="summary-box"><div class="label">Closing</div><div class="value neutral">Rs. {{ "{:,.0f}".format(closing_balance) }}</div></div>
   <div class="summary-box"><div class="label">Physical Cash</div><div class="value neutral">{% if physical_cash_available is not none %}Rs. {{ "{:,.0f}".format(physical_cash_available) }}{% else %}-{% endif %}</div></div>
-  <div class="summary-box"><div class="label">Difference</div><div class="value" style="color:{{ '#dc2626' if adjustment_amount > 0 else '#16a34a' if adjustment_amount < 0 else '#0369a1' }};">Rs. {{ "{:,.0f}".format(adjustment_amount) }}</div></div>
-  <div class="summary-box"><div class="label">Next Day Opening</div><div class="value neutral">Rs. {{ "{:,.0f}".format(adjusted_closing_balance) }}</div></div>
 </div>
-{% if reconciliation_reason %}
-<p><strong>Reconciliation reason:</strong> {{ reconciliation_reason }}</p>
-{% endif %}
 <table>
   <thead>
     <tr>
       <th>Date</th>
-      <th>Reference</th>
+      <th>Type</th>
+      <th>Account</th>
+      <th>Category</th>
+      <th>Subcategory</th>
+      <th>Party</th>
       <th>Description</th>
-      <th class="text-right">Cash In</th>
-      <th class="text-right">Cash Out</th>
-      <th class="text-right">Running Balance</th>
+      <th>Notes</th>
+      <th>Reference</th>
+      <th class="text-right">Received</th>
+      <th class="text-right">Spent</th>
+      <th class="text-right">Transfer</th>
     </tr>
   </thead>
   <tbody>
     {% for r in rows %}
     <tr>
       <td>{{ r.date }}</td>
-      <td>{{ r.reference }}</td>
+      <td>{{ r.tx_type_label }}</td>
+      <td>{{ r.account_display }}</td>
+      <td>{{ r.category or '—' }}</td>
+      <td>{{ r.subcategory or '—' }}</td>
+      <td>{{ r.party_name or '—' }}</td>
       <td>{{ r.description }}</td>
+      <td>{{ r.note }}</td>
+      <td>{{ r.reference }}</td>
       <td class="text-right pos">{% if r.cash_in %}Rs. {{ "{:,.0f}".format(r.cash_in) }}{% endif %}</td>
       <td class="text-right neg">{% if r.cash_out %}Rs. {{ "{:,.0f}".format(r.cash_out) }}{% endif %}</td>
-      <td class="text-right">Rs. {{ "{:,.0f}".format(r.running_balance) }}</td>
+      <td class="text-right">{% if r.transfer_amount %}Rs. {{ "{:,.0f}".format(r.transfer_amount) }}{% endif %}</td>
     </tr>
     {% else %}
-    <tr><td colspan="6" style="text-align:center;color:#888;">No transactions found for this period.</td></tr>
+    <tr><td colspan="12" style="text-align:center;color:#888;">No transactions found for this period.</td></tr>
     {% endfor %}
   </tbody>
   <tfoot>
     <tr>
-      <td colspan="3">Totals</td>
+      <td colspan="9">Totals (transfers are not income or expense)</td>
       <td class="text-right pos">Rs. {{ "{:,.0f}".format(total_cash_in) }}</td>
       <td class="text-right neg">Rs. {{ "{:,.0f}".format(total_cash_out) }}</td>
-      <td class="text-right">Rs. {{ "{:,.0f}".format(closing_balance) }}</td>
+      <td class="text-right">Rs. {{ "{:,.0f}".format(total_transfer_in or 0) }}</td>
     </tr>
   </tfoot>
 </table>
@@ -97,39 +104,43 @@
     <a href="{{ url_for('accounts.manage_accounts') }}" class="btn btn-outline-secondary btn-pill fw-bold d-print-none">
       <i class="bi bi-gear me-1"></i> Manage Accounts
     </a>
-    <a href="{{ url_for('cash_flow', from_date=from_date, to_date=to_date, filter_type=filter_type, opening_balance=opening_balance_input, export_pdf=1) }}"
+    <a href="{{ url_for('cash_flow', from_date=from_date, to_date=to_date, filter_type=filter_type, origin=filter_origin, category=filter_category, subcategory=filter_subcategory, party=filter_party, party_type=filter_party_type, account_id=filter_account_id, q=filter_q, notes=filter_notes, reference=filter_reference, description=filter_description, created_by=filter_created_by, status=filter_status, amount_min=filter_amount_min, amount_max=filter_amount_max, export_pdf=1) }}"
        class="btn btn-outline-secondary btn-pill fw-bold d-print-none">
       <i class="bi bi-file-earmark-pdf me-1"></i> PDF
+    </a>
+    <a href="{{ url_for('cash_flow', from_date=from_date, to_date=to_date, filter_type=filter_type, origin=filter_origin, category=filter_category, subcategory=filter_subcategory, party=filter_party, party_type=filter_party_type, account_id=filter_account_id, q=filter_q, notes=filter_notes, reference=filter_reference, description=filter_description, created_by=filter_created_by, status=filter_status, amount_min=filter_amount_min, amount_max=filter_amount_max, export_csv=1) }}"
+       class="btn btn-outline-secondary btn-pill fw-bold d-print-none">
+      <i class="bi bi-download me-1"></i> CSV
     </a>
     <a href="{{ url_for('cash_flow_differences') }}"
        class="btn btn-outline-secondary btn-pill fw-bold d-print-none">
       <i class="bi bi-clock-history me-1"></i> Differences
     </a>
   {% endset %}
-  {{ ui_header('bi-water', 'Cash Flow', subtitle='A simple money diary. Company cash/bank accounts come from Accounts — you cannot create accounts here.', toolbar=_toolbar) }}
+  {{ ui_header('bi-water', 'Cash Flow', subtitle='A transaction engine. Categories and sub-categories are yours to create — nothing is hard-coded. Company accounts come from Accounts.', toolbar=_toolbar) }}
 
   <div class="row g-3 mb-4 d-print-none">
     <div class="col-md-4">
       <div class="ui-card h-100" style="border-left:4px solid #16a34a;">
         <div class="ui-card-body">
-          <div class="fw-bold text-success mb-1">1. Money in</div>
-          <div class="small text-muted">Cash you received (loan, person, other bank). Client payments from Accounts also show automatically as <em>From Accounts</em>.</div>
+          <div class="fw-bold text-success mb-1">Received</div>
+          <div class="small text-muted">Money into a company account. Pick a Received / Both category. Client payments from Accounts also appear automatically as system rows.</div>
         </div>
       </div>
     </div>
     <div class="col-md-4">
       <div class="ui-card h-100" style="border-left:4px solid #dc2626;">
         <div class="ui-card-body">
-          <div class="fw-bold text-danger mb-1">2. Money out</div>
-          <div class="small text-muted">Cash you spent (fuel, repair, food, loan paid). Supplier payments from Accounts also show automatically.</div>
+          <div class="fw-bold text-danger mb-1">Spent</div>
+          <div class="small text-muted">Money out of a company account. Pick a Spent / Both category. Supplier payments from Accounts also appear automatically.</div>
         </div>
       </div>
     </div>
     <div class="col-md-4">
       <div class="ui-card h-100" style="border-left:4px solid #0ea5e9;">
         <div class="ui-card-body">
-          <div class="fw-bold text-info mb-1">3. Which account?</div>
-          <div class="small text-muted">Always pick a company cash or bank account that already exists in <a href="{{ url_for('accounts.manage_accounts') }}">Accounts</a>. New accounts are added only there.</div>
+          <div class="fw-bold text-info mb-1">Transfer</div>
+          <div class="small text-muted">Account to account. Not income and not expense. Company-wide totals ignore transfers.</div>
         </div>
       </div>
     </div>
@@ -139,7 +150,7 @@
     <div class="ui-card-header d-flex justify-content-between align-items-center">
       <div>
         <h5 class="mb-0">Company accounts (from Accounts)</h5>
-        <small class="text-muted">Read-only list of company cash/bank. To add or edit an account, open Accounts → Manage Accounts. Cash Flow cannot create company accounts.</small>
+        <small class="text-muted">Read-only list of company cash/bank. Cash Flow cannot create company accounts.</small>
       </div>
       <a href="{{ url_for('accounts.manage_accounts') }}" class="btn btn-sm btn-outline-secondary">Open Accounts</a>
     </div>
@@ -182,71 +193,76 @@
 
   <div class="ui-card mb-4 d-print-none">
     <div class="ui-card-header">
-      <h5 class="mb-0">Record money in or out</h5>
-      <small class="text-muted">Choose an existing company account. Do not re-enter client or supplier payments — those come from Accounts automatically.</small>
+      <h5 class="mb-0">Record a cash-flow transaction</h5>
+      <small class="text-muted">Do not re-enter client or supplier payments — those come from Accounts as system rows.</small>
     </div>
     <div class="ui-card-body">
       <form method="POST" action="{{ url_for('cash_flow') }}" class="row g-3 align-items-end" id="cfRecordForm">
-        <input type="hidden" name="action" value="record_movement">
+        <input type="hidden" name="action" id="cfFormAction" value="record_movement">
+        <input type="hidden" name="entry_id" id="cfEntryId" value="">
         <input type="hidden" name="from_date" value="{{ from_date }}">
         <input type="hidden" name="to_date" value="{{ to_date }}">
+        <input type="hidden" name="idempotency_key" id="cfIdempotencyKey" value="">
         <input type="hidden" name="category_id" id="cfCategoryId" value="">
         <input type="hidden" name="subcategory_id" id="cfSubcategoryId" value="">
         <input type="hidden" name="party_id" id="cfPartyId" value="">
+
         <div class="col-md-2">
           <label class="ui-label">Type</label>
           <select name="direction" id="cfDirection" class="form-select form-select-sm" required>
             <option value="in">Received</option>
             <option value="out">Spent</option>
+            <option value="transfer">Transfer</option>
           </select>
         </div>
         <div class="col-md-2">
           <label class="ui-label">Amount (Rs.)</label>
-          <input type="number" step="0.01" min="0.01" name="amount" class="form-control form-control-sm" required>
+          <input type="number" step="0.01" min="0.01" name="amount" id="cfAmount" class="form-control form-control-sm" required>
         </div>
-        <div class="col-md-3">
-          <label class="ui-label">Company account <span class="text-danger">*</span></label>
-          <select name="cash_account_id" class="form-select form-select-sm" required {% if not cash_accounts %}disabled{% endif %}>
+        <div class="col-md-4 cf-field-account">
+          <label class="ui-label" id="cfAccountLabel">Received into account <span class="text-danger">*</span></label>
+          <select name="cash_account_id" id="cfAccountId" class="form-select form-select-sm" required {% if not cash_accounts %}disabled{% endif %}>
             <option value="">Select from Accounts…</option>
             {% for a in cash_accounts or [] %}
             <option value="{{ a.id }}">{{ a.name }} · {{ (a.category or 'cash')|upper }} · Rs. {{ "{:,.0f}".format(a.balance or 0) }}</option>
             {% endfor %}
           </select>
-          <div class="small text-muted mt-1">List comes from Accounts. <a href="{{ url_for('accounts.manage_accounts') }}">Change accounts there</a>.</div>
+        </div>
+        <div class="col-md-4 cf-field-dest d-none">
+          <label class="ui-label">Transfer to account <span class="text-danger">*</span></label>
+          <select name="to_account_id" id="cfToAccountId" class="form-select form-select-sm" {% if not cash_accounts %}disabled{% endif %}>
+            <option value="">Select destination…</option>
+            {% for a in cash_accounts or [] %}
+            <option value="{{ a.id }}">{{ a.name }} · {{ (a.category or 'cash')|upper }} · Rs. {{ "{:,.0f}".format(a.balance or 0) }}</option>
+            {% endfor %}
+          </select>
         </div>
         <div class="col-md-2">
-          <label class="ui-label">Date & time</label>
-          <input type="datetime-local" name="movement_date" class="form-control form-control-sm">
+          <label class="ui-label">Date &amp; time</label>
+          <input type="datetime-local" name="movement_date" id="cfDate" class="form-control form-control-sm">
         </div>
-        <div class="col-md-3 position-relative">
-          <label class="ui-label">Category</label>
-          <input type="text" name="category_name" id="cfCategorySearch" class="form-control form-control-sm" placeholder="Fuel, Loan Received…" autocomplete="off" onfocus="showCombobox('cfCategorySearch', 'cfCategoryList')" oninput="document.getElementById('cfCategoryId').value=''; filterCombobox('cfCategorySearch', 'cfCategoryList')">
-          <div id="cfCategoryList" class="combobox-list shadow-lg" style="display:none;" data-value-input-id="cfCategoryId" data-store="name" data-after="onCfCategoryPicked">
-            {% for c in cf_categories or [] %}
-            <div class="combobox-item" data-combo-code="{{ c.id }}" data-combo-name="{{ c.name }}" data-combo-input="cfCategorySearch" data-combo-value-input="cfCategoryId" data-direction="{{ c.direction }}">{{ c.name }} <span class="text-muted">({{ c.direction }})</span></div>
-            {% endfor %}
-          </div>
+
+        <div class="col-md-3 cf-field-cat position-relative">
+          <label class="ui-label">Category <span class="text-danger">*</span></label>
+          <input type="text" name="category_name" id="cfCategorySearch" class="form-control form-control-sm" placeholder="Search or type a new category" autocomplete="off">
+          <div id="cfCategoryList" class="combobox-list shadow-lg" style="display:none;" data-value-input-id="cfCategoryId" data-store="name" data-after="onCfCategoryPicked"></div>
         </div>
-        <div class="col-md-3 position-relative">
+        <div class="col-md-3 cf-field-cat position-relative">
           <label class="ui-label">Sub-category</label>
-          <input type="text" name="subcategory_name" id="cfSubSearch" class="form-control form-control-sm" placeholder="Optional / add new" autocomplete="off" onfocus="showCombobox('cfSubSearch', 'cfSubList')" oninput="document.getElementById('cfSubcategoryId').value=''; filterCombobox('cfSubSearch', 'cfSubList')">
-          <div id="cfSubList" class="combobox-list shadow-lg" style="display:none;" data-value-input-id="cfSubcategoryId" data-store="name">
-            {% for s in cf_subcategories or [] %}
-            <div class="combobox-item" data-combo-code="{{ s.id }}" data-combo-name="{{ s.name }}" data-combo-input="cfSubSearch" data-combo-value-input="cfSubcategoryId" data-category-id="{{ s.category_id }}">{{ s.name }}</div>
-            {% endfor %}
-          </div>
+          <input type="text" name="subcategory_name" id="cfSubSearch" class="form-control form-control-sm" placeholder="Only this category’s sub-categories" autocomplete="off">
+          <div id="cfSubList" class="combobox-list shadow-lg" style="display:none;" data-value-input-id="cfSubcategoryId" data-store="name"></div>
         </div>
-        <div class="col-md-2">
-          <label class="ui-label">Who / what type</label>
+        <div class="col-md-2 cf-field-party">
+          <label class="ui-label" id="cfPartyTypeLabel">Who / what type</label>
           <select name="party_type" id="cfPartyType" class="form-select form-select-sm">
             {% for val, lab in party_types or [] %}
             <option value="{{ val }}">{{ lab }}</option>
             {% endfor %}
           </select>
         </div>
-        <div class="col-md-3 position-relative">
-          <label class="ui-label">Who (person / outsider / loan name)</label>
-          <input type="text" name="party_name" id="cfPartySearch" class="form-control form-control-sm" placeholder="e.g. Ali, HBL loan, workshop" autocomplete="off" onfocus="showCombobox('cfPartySearch', 'cfPartyList')" oninput="document.getElementById('cfPartyId').value=''; filterCombobox('cfPartySearch', 'cfPartyList')">
+        <div class="col-md-4 cf-field-party position-relative">
+          <label class="ui-label" id="cfPartyLabel">Who / source</label>
+          <input type="text" name="party_name" id="cfPartySearch" class="form-control form-control-sm" placeholder="Person, workshop, lender…" autocomplete="off">
           <div id="cfPartyList" class="combobox-list shadow-lg" style="display:none;" data-value-input-id="cfPartyId" data-store="name" data-after="onCfPartyPicked">
             {% for p in cf_parties or [] %}
             <div class="combobox-item" data-combo-code="{{ p.id }}" data-combo-name="{{ p.name }}" data-combo-input="cfPartySearch" data-combo-value-input="cfPartyId" data-party-type="{{ p.party_type }}">{{ p.name }} <span class="text-muted">{{ p.party_type }}</span></div>
@@ -255,16 +271,27 @@
         </div>
         <div class="col-md-4">
           <label class="ui-label">Detail / description</label>
-          <input type="text" name="description" class="form-control form-control-sm" placeholder="e.g. Workshop bill, lunch, loan from Ali">
+          <input type="text" name="description" id="cfDescription" class="form-control form-control-sm" placeholder="Short explanation">
         </div>
-        <div class="col-md-3">
-          <label class="ui-label">Note</label>
-          <input type="text" name="movement_note" class="form-control form-control-sm" placeholder="Optional">
+        <div class="col-md-4">
+          <label class="ui-label">Notes</label>
+          <input type="text" name="movement_note" id="cfNote" class="form-control form-control-sm" placeholder="Searchable extra detail">
         </div>
         <div class="col-md-2">
-          <button type="submit" class="btn btn-warning text-dark fw-bold w-100">
-            <i class="bi bi-plus-lg me-1"></i> Save
+          <label class="ui-label">Reference</label>
+          <input type="text" name="reference" id="cfReference" class="form-control form-control-sm" placeholder="Bill / voucher">
+        </div>
+        <div class="col-md-2 cf-edit-reason d-none">
+          <label class="ui-label">Edit reason</label>
+          <input type="text" name="edit_reason" id="cfEditReason" class="form-control form-control-sm" placeholder="Why the change">
+        </div>
+        <div class="col-md-2 d-flex gap-2">
+          <button type="submit" class="btn btn-warning text-dark fw-bold w-100" id="cfSaveBtn">
+            <i class="bi bi-plus-lg me-1"></i> <span id="cfSaveLabel">Save</span>
           </button>
+        </div>
+        <div class="col-md-2 cf-edit-reason d-none">
+          <button type="button" class="btn btn-outline-secondary w-100" id="cfCancelEdit">Cancel edit</button>
         </div>
       </form>
     </div>
@@ -272,46 +299,50 @@
 
   <div class="ui-card mb-4 d-print-none">
     <div class="ui-card-header">
-      <h5 class="mb-0">Add your own lists</h5>
-      <small class="text-muted">Categories, sub-categories and names you create here stay available forever.</small>
+      <h5 class="mb-0">Master data CRUD</h5>
+      <small class="text-muted">Create, view, edit, disable and restore every Cash Flow list. Disable keeps history readable.</small>
     </div>
     <div class="ui-card-body">
-      <div class="row g-3">
+      <div class="row g-3 mb-3">
         <div class="col-md-4">
           <form method="POST" class="row g-2">
             <input type="hidden" name="action" value="add_category">
-            <div class="col-12"><label class="ui-label">New category</label></div>
-            <div class="col-7"><input type="text" name="new_category_name" class="form-control form-control-sm" placeholder="e.g. Toll, Salary" required></div>
+            <div class="col-12"><label class="ui-label">Create category</label></div>
+            <div class="col-7"><input type="text" name="new_category_name" class="form-control form-control-sm" placeholder="Name" required></div>
             <div class="col-5">
               <select name="new_category_direction" class="form-select form-select-sm">
-                <option value="both">In &amp; Out</option>
-                <option value="in">Receive only</option>
-                <option value="out">Spend only</option>
+                <option value="both">Received &amp; Spent</option>
+                <option value="in">Received only</option>
+                <option value="out">Spent only</option>
               </select>
             </div>
+            <div class="col-12"><input type="text" name="new_category_notes" class="form-control form-control-sm" placeholder="Notes"></div>
             <div class="col-12"><button class="btn btn-sm btn-outline-warning" type="submit">Add category</button></div>
           </form>
         </div>
         <div class="col-md-4">
           <form method="POST" class="row g-2">
             <input type="hidden" name="action" value="add_subcategory">
-            <div class="col-12"><label class="ui-label">New sub-category</label></div>
+            <div class="col-12"><label class="ui-label">Create sub-category</label></div>
             <div class="col-6">
               <select name="new_sub_category_id" class="form-select form-select-sm" required>
                 <option value="">Parent category</option>
                 {% for c in cf_categories or [] %}
+                {% if c.is_active %}
                 <option value="{{ c.id }}">{{ c.name }}</option>
+                {% endif %}
                 {% endfor %}
               </select>
             </div>
-            <div class="col-6"><input type="text" name="new_subcategory_name" class="form-control form-control-sm" placeholder="e.g. Diesel" required></div>
+            <div class="col-6"><input type="text" name="new_subcategory_name" class="form-control form-control-sm" placeholder="Name" required></div>
+            <div class="col-12"><input type="text" name="new_subcategory_notes" class="form-control form-control-sm" placeholder="Notes"></div>
             <div class="col-12"><button class="btn btn-sm btn-outline-warning" type="submit">Add sub-category</button></div>
           </form>
         </div>
         <div class="col-md-4">
           <form method="POST" class="row g-2">
             <input type="hidden" name="action" value="add_party">
-            <div class="col-12"><label class="ui-label">New person / outsider / loan name <span class="text-muted">(not a company account)</span></label></div>
+            <div class="col-12"><label class="ui-label">Create party</label></div>
             <div class="col-6"><input type="text" name="new_party_name" class="form-control form-control-sm" placeholder="Name" required></div>
             <div class="col-6">
               <select name="new_party_type" class="form-select form-select-sm">
@@ -320,18 +351,129 @@
                 {% endfor %}
               </select>
             </div>
-            <div class="col-12"><button class="btn btn-sm btn-outline-warning" type="submit">Add name</button></div>
+            <div class="col-12"><input type="text" name="new_party_note" class="form-control form-control-sm" placeholder="Notes"></div>
+            <div class="col-12"><button class="btn btn-sm btn-outline-warning" type="submit">Add party</button></div>
           </form>
         </div>
+      </div>
+
+      <h6 class="fw-bold mt-2">Categories</h6>
+      <div class="table-responsive mb-4">
+        <table class="ui-table mb-0">
+          <thead><tr><th>ID</th><th>Name</th><th>Direction</th><th>Notes</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            {% for c in cf_categories or [] %}
+            <tr>
+              <td class="text-muted">{{ c.id }}</td>
+              <td colspan="5">
+                <form method="POST" class="row g-1 align-items-center">
+                  <input type="hidden" name="category_id" value="{{ c.id }}">
+                  <div class="col-md-3"><input type="text" name="category_name" class="form-control form-control-sm" value="{{ c.name }}" required></div>
+                  <div class="col-md-2">
+                    <select name="category_direction" class="form-select form-select-sm">
+                      <option value="both" {% if c.direction=='both' %}selected{% endif %}>Both</option>
+                      <option value="in" {% if c.direction=='in' %}selected{% endif %}>Received</option>
+                      <option value="out" {% if c.direction=='out' %}selected{% endif %}>Spent</option>
+                    </select>
+                  </div>
+                  <div class="col-md-3"><input type="text" name="category_notes" class="form-control form-control-sm" value="{{ c.notes or '' }}" placeholder="Notes"></div>
+                  <div class="col-md-1">{% if c.is_active %}<span class="badge bg-success">Active</span>{% else %}<span class="badge bg-secondary">Disabled</span>{% endif %}</div>
+                  <div class="col-md-3 d-flex gap-1">
+                    <button class="btn btn-sm btn-outline-secondary" name="action" value="rename_category" type="submit">Save</button>
+                    {% if c.is_active %}
+                    <button class="btn btn-sm btn-outline-danger" name="action" value="disable_category" type="submit">Disable</button>
+                    {% else %}
+                    <button class="btn btn-sm btn-outline-success" name="action" value="enable_category" type="submit">Enable</button>
+                    {% endif %}
+                  </div>
+                </form>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" class="ui-empty">No categories yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <h6 class="fw-bold">Sub-categories</h6>
+      <div class="table-responsive mb-4">
+        <table class="ui-table mb-0">
+          <thead><tr><th>ID</th><th>Parent</th><th>Name</th><th>Notes</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            {% for s in cf_subcategories or [] %}
+            <tr>
+              <td class="text-muted">{{ s.id }}</td>
+              <td>{{ s.category.name if s.category else '—' }}</td>
+              <td colspan="4">
+                <form method="POST" class="row g-1 align-items-center">
+                  <input type="hidden" name="subcategory_id" value="{{ s.id }}">
+                  <div class="col-md-3"><input type="text" name="subcategory_name" class="form-control form-control-sm" value="{{ s.name }}" required></div>
+                  <div class="col-md-4"><input type="text" name="subcategory_notes" class="form-control form-control-sm" value="{{ s.notes or '' }}" placeholder="Notes"></div>
+                  <div class="col-md-2">{% if s.is_active %}<span class="badge bg-success">Active</span>{% else %}<span class="badge bg-secondary">Disabled</span>{% endif %}</div>
+                  <div class="col-md-3 d-flex gap-1">
+                    <button class="btn btn-sm btn-outline-secondary" name="action" value="rename_subcategory" type="submit">Save</button>
+                    {% if s.is_active %}
+                    <button class="btn btn-sm btn-outline-danger" name="action" value="disable_subcategory" type="submit">Disable</button>
+                    {% else %}
+                    <button class="btn btn-sm btn-outline-success" name="action" value="enable_subcategory" type="submit">Enable</button>
+                    {% endif %}
+                  </div>
+                </form>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" class="ui-empty">No sub-categories yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <h6 class="fw-bold">Parties</h6>
+      <div class="table-responsive">
+        <table class="ui-table mb-0">
+          <thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Notes</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            {% for p in cf_parties_all or [] %}
+            <tr>
+              <td class="text-muted">{{ p.id }}</td>
+              <td colspan="5">
+                <form method="POST" class="row g-1 align-items-center">
+                  <input type="hidden" name="party_id" value="{{ p.id }}">
+                  <div class="col-md-3"><input type="text" name="party_name" class="form-control form-control-sm" value="{{ p.name }}" required></div>
+                  <div class="col-md-2">
+                    <select name="party_type" class="form-select form-select-sm">
+                      {% for val, lab in party_types or [] %}
+                      <option value="{{ val }}" {% if p.party_type==val %}selected{% endif %}>{{ lab }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  <div class="col-md-3"><input type="text" name="party_note" class="form-control form-control-sm" value="{{ p.note or '' }}" placeholder="Notes"></div>
+                  <div class="col-md-1">{% if p.is_active %}<span class="badge bg-success">Active</span>{% else %}<span class="badge bg-secondary">Disabled</span>{% endif %}</div>
+                  <div class="col-md-3 d-flex gap-1">
+                    <button class="btn btn-sm btn-outline-secondary" name="action" value="update_party" type="submit">Save</button>
+                    {% if p.is_active %}
+                    <button class="btn btn-sm btn-outline-danger" name="action" value="disable_party" type="submit">Disable</button>
+                    {% else %}
+                    <button class="btn btn-sm btn-outline-success" name="action" value="enable_party" type="submit">Enable</button>
+                    {% endif %}
+                  </div>
+                </form>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" class="ui-empty">No parties yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
 
-  {# Filter bar #}
   <div class="ui-card mb-4 d-print-none">
     <div class="ui-card-header">
-      <h5 class="mb-0">Report filters</h5>
-      <small class="text-muted">Date range, name, category, sub-category, party type, account.</small>
+      <h5 class="mb-0">Filters</h5>
+      <small class="text-muted">All filters work together. Notes, description and reference are separate searchable fields.</small>
     </div>
     <div class="ui-card-body">
       <form method="GET" action="{{ url_for('cash_flow') }}" class="row g-2 align-items-end">
@@ -344,43 +486,21 @@
           <input type="date" name="to_date" class="form-control form-control-sm" value="{{ to_date }}">
         </div>
         <div class="col-md-2">
-          <label class="ui-label">In / Out</label>
+          <label class="ui-label">Type</label>
           <select name="filter_type" class="form-select form-select-sm">
             <option value="all" {% if filter_type=='all' %}selected{% endif %}>All</option>
-            <option value="cash_in" {% if filter_type=='cash_in' %}selected{% endif %}>Received only</option>
-            <option value="cash_out" {% if filter_type=='cash_out' %}selected{% endif %}>Spent only</option>
+            <option value="cash_in" {% if filter_type=='cash_in' %}selected{% endif %}>Received</option>
+            <option value="cash_out" {% if filter_type=='cash_out' %}selected{% endif %}>Spent</option>
+            <option value="transfer" {% if filter_type=='transfer' %}selected{% endif %}>Transfer</option>
           </select>
         </div>
         <div class="col-md-2">
           <label class="ui-label">Source</label>
           <select name="origin" class="form-select form-select-sm">
-            <option value="all" {% if filter_origin=='all' %}selected{% endif %}>All</option>
-            <option value="recorded" {% if filter_origin=='recorded' %}selected{% endif %}>Recorded here</option>
-            <option value="derived" {% if filter_origin=='derived' %}selected{% endif %}>Derived (client/supplier/sale)</option>
-          </select>
-        </div>
-        <div class="col-md-2">
-          <label class="ui-label">Category</label>
-          <input type="text" name="category" class="form-control form-control-sm" value="{{ filter_category or '' }}" placeholder="Fuel, Loan…">
-        </div>
-        <div class="col-md-2">
-          <label class="ui-label">Sub-category</label>
-          <input type="text" name="subcategory" class="form-control form-control-sm" value="{{ filter_subcategory or '' }}" placeholder="Diesel…">
-        </div>
-        <div class="col-md-2">
-          <label class="ui-label">Party type</label>
-          <select name="party_type" class="form-select form-select-sm">
-            <option value="">All types</option>
-            {% for val, lab in party_types or [] %}
-            <option value="{{ val }}" {% if filter_party_type==val %}selected{% endif %}>{{ lab }}</option>
+            {% for val, lab in source_options or [] %}
+            <option value="{{ val }}" {% if filter_origin==val %}selected{% endif %}>{{ lab }}</option>
             {% endfor %}
-            <option value="client" {% if filter_party_type=='client' %}selected{% endif %}>Client (derived)</option>
-            <option value="supplier" {% if filter_party_type=='supplier' %}selected{% endif %}>Supplier (derived)</option>
           </select>
-        </div>
-        <div class="col-md-2">
-          <label class="ui-label">Name</label>
-          <input type="text" name="party" class="form-control form-control-sm" value="{{ filter_party or '' }}" placeholder="Person / bank / loan">
         </div>
         <div class="col-md-2">
           <label class="ui-label">Account</label>
@@ -391,11 +511,71 @@
             {% endfor %}
           </select>
         </div>
-        <div class="col-md-3">
-          <label class="ui-label">Search anything</label>
-          <input type="text" name="q" class="form-control form-control-sm" value="{{ filter_q or '' }}" placeholder="Name, category, bill…">
+        <div class="col-md-2">
+          <label class="ui-label">Status</label>
+          <select name="status" class="form-select form-select-sm">
+            <option value="active" {% if filter_status=='active' %}selected{% endif %}>Active</option>
+            <option value="voided" {% if filter_status=='voided' %}selected{% endif %}>Voided</option>
+            <option value="all" {% if filter_status=='all' %}selected{% endif %}>All</option>
+          </select>
         </div>
-        <div class="col-md-3 d-flex gap-2">
+        <div class="col-md-2">
+          <label class="ui-label">Category</label>
+          <input type="text" name="category" class="form-control form-control-sm" value="{{ filter_category or '' }}" placeholder="Contains…">
+        </div>
+        <div class="col-md-2">
+          <label class="ui-label">Sub-category</label>
+          <input type="text" name="subcategory" class="form-control form-control-sm" value="{{ filter_subcategory or '' }}" placeholder="Contains…">
+        </div>
+        <div class="col-md-2">
+          <label class="ui-label">Party type</label>
+          <select name="party_type" class="form-select form-select-sm">
+            <option value="">All types</option>
+            {% for val, lab in party_types or [] %}
+            <option value="{{ val }}" {% if filter_party_type==val %}selected{% endif %}>{{ lab }}</option>
+            {% endfor %}
+            <option value="client" {% if filter_party_type=='client' %}selected{% endif %}>Client (system)</option>
+            <option value="supplier" {% if filter_party_type=='supplier' %}selected{% endif %}>Supplier (system)</option>
+          </select>
+        </div>
+        <div class="col-md-2">
+          <label class="ui-label">Party</label>
+          <input type="text" name="party" class="form-control form-control-sm" value="{{ filter_party or '' }}" placeholder="Contains…">
+        </div>
+        <div class="col-md-2">
+          <label class="ui-label">Notes contains</label>
+          <input type="text" name="notes" class="form-control form-control-sm" value="{{ filter_notes or '' }}" placeholder="diesel, truck…">
+        </div>
+        <div class="col-md-2">
+          <label class="ui-label">Description contains</label>
+          <input type="text" name="description" class="form-control form-control-sm" value="{{ filter_description or '' }}">
+        </div>
+        <div class="col-md-2">
+          <label class="ui-label">Reference contains</label>
+          <input type="text" name="reference" class="form-control form-control-sm" value="{{ filter_reference or '' }}">
+        </div>
+        <div class="col-md-2">
+          <label class="ui-label">Min amount</label>
+          <input type="number" step="0.01" name="amount_min" class="form-control form-control-sm" value="{{ filter_amount_min or '' }}">
+        </div>
+        <div class="col-md-2">
+          <label class="ui-label">Max amount</label>
+          <input type="number" step="0.01" name="amount_max" class="form-control form-control-sm" value="{{ filter_amount_max or '' }}">
+        </div>
+        <div class="col-md-2">
+          <label class="ui-label">Created by</label>
+          <select name="created_by" class="form-select form-select-sm">
+            <option value="">Anyone</option>
+            {% for name in created_by_options or [] %}
+            <option value="{{ name }}" {% if filter_created_by==name %}selected{% endif %}>{{ name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="ui-label">Quick search</label>
+          <input type="text" name="q" class="form-control form-control-sm" value="{{ filter_q or '' }}" placeholder="ID, notes, reference, party, category…">
+        </div>
+        <div class="col-md-4 d-flex gap-2">
           <button type="submit" class="btn btn-warning btn-sm fw-bold flex-grow-1"><i class="bi bi-funnel me-1"></i> Apply</button>
           <a href="{{ url_for('cash_flow') }}" class="btn btn-outline-secondary btn-sm">Reset</a>
         </div>
@@ -462,34 +642,29 @@
           <label class="ui-label">Date</label>
           <input type="date" name="adjustment_date" class="form-control form-control-sm" value="{{ adjustment_date_input }}" readonly>
         </div>
-        
         <div class="col-auto">
           <label class="ui-label">System Calculated Closing</label>
           <div class="form-control form-control-sm" style="background:#f8f9fa;cursor:default;font-weight:bold;">
             Rs. {{ "{:,.0f}".format(closing_balance) }}
           </div>
         </div>
-        
         <div class="col-auto">
           <label class="ui-label">Physical Cash Available <span style="color:red;font-weight:bold;">*</span></label>
-          <input type="number" step="0.01" name="physical_cash_available" class="form-control form-control-sm" 
-                 style="width:170px;font-weight:bold;" 
+          <input type="number" step="0.01" name="physical_cash_available" class="form-control form-control-sm"
+                 style="width:170px;font-weight:bold;"
                  placeholder="0" value="{{ physical_cash_available if physical_cash_available is not none else '' }}" id="physical_cash_input">
         </div>
-        
         <div class="col-auto">
           <label class="ui-label">Difference (Auto-calculated)</label>
           <div class="form-control form-control-sm" style="background:#fff3cd;cursor:default;font-weight:bold;color:#856404;" id="difference_display">
             Rs. 0
           </div>
         </div>
-        
         <div class="col-12">
           <label class="ui-label">Reason / Note</label>
-          <input type="text" name="reconciliation_reason" class="form-control form-control-sm" value="{{ reconciliation_reason }}" 
-                 placeholder="e.g., Cash not recorded in system, counted discrepancy, petty cash refund">
+          <input type="text" name="reconciliation_reason" class="form-control form-control-sm" value="{{ reconciliation_reason }}"
+                 placeholder="Why the count differs">
         </div>
-        
         <div class="col-auto">
           <button type="submit" class="btn btn-success btn-sm fw-bold">
             <i class="bi bi-save me-1"></i> Save Reconciliation
@@ -501,24 +676,9 @@
           {% endif %}
         </div>
       </form>
-      
-      <script>
-      document.getElementById('physical_cash_input').addEventListener('input', function() {
-        const physical = parseFloat(this.value) || 0;
-        const calculated = {{ closing_balance }};
-        const difference = calculated - physical;
-        const display = document.getElementById('difference_display');
-        const color = difference > 0 ? '#dc2626' : (difference < 0 ? '#16a34a' : '#6b7280');
-        display.textContent = 'Rs. ' + difference.toLocaleString('en-PK', {minimumFractionDigits: 0, maximumFractionDigits: 2});
-        display.style.color = color;
-      });
-      // Trigger on load
-      document.getElementById('physical_cash_input').dispatchEvent(new Event('input'));
-      </script>
     </div>
-  </div>
+  </details>
 
-  {# Summary KPIs #}
   <div class="ui-kpi-grid mb-4">
     <div class="ui-tile" style="border-left:4px solid #6366f1;">
       <div class="ui-tile-label">Opening Balance</div>
@@ -526,38 +686,37 @@
       <div class="ui-tile-sub">Start of period</div>
     </div>
     <div class="ui-tile" style="border-left:4px solid #16a34a;">
-      <div class="ui-tile-label">Total Cash In</div>
+      <div class="ui-tile-label">Received</div>
       <div class="ui-tile-value" style="color:#16a34a;">Rs. {{ "{:,.0f}".format(total_cash_in) }}</div>
       <div class="ui-tile-sub">{{ from_date }} — {{ to_date }}</div>
     </div>
     <div class="ui-tile" style="border-left:4px solid #dc2626;">
-      <div class="ui-tile-label">Total Cash Out</div>
+      <div class="ui-tile-label">Spent</div>
       <div class="ui-tile-value" style="color:#dc2626;">Rs. {{ "{:,.0f}".format(total_cash_out) }}</div>
       <div class="ui-tile-sub">{{ from_date }} — {{ to_date }}</div>
     </div>
     <div class="ui-tile" style="border-left:4px solid #0369a1;">
-      <div class="ui-tile-label">Closing Balance</div>
+      <div class="ui-tile-label">Closing</div>
       <div class="ui-tile-value" style="color:#0369a1;">Rs. {{ "{:,.0f}".format(closing_balance) }}</div>
-      <div class="ui-tile-sub">End of period</div>
+      <div class="ui-tile-sub">Opening + received − spent</div>
+    </div>
+    <div class="ui-tile" style="border-left:4px solid #0ea5e9;">
+      <div class="ui-tile-label">Transfers</div>
+      <div class="ui-tile-value" style="color:#0ea5e9;">Rs. {{ "{:,.0f}".format(total_transfer_in or 0) }}</div>
+      <div class="ui-tile-sub">Not income or expense</div>
     </div>
     <div class="ui-tile" style="border-left:4px solid #f97316;">
-      <div class="ui-tile-label">Physical Cash Available</div>
-      <div class="ui-tile-value" style="color:#f97316;font-weight:bold;">{% if physical_cash_available is not none %}Rs. {{ "{:,.0f}".format(physical_cash_available) }}{% else %}-{% endif %}</div>
-      <div class="ui-tile-sub">From reconciliation for {{ adjustment_date_input }}</div>
-    </div>
-    <div class="ui-tile" style="border-left:4px solid #f97316;">
-      <div class="ui-tile-label">Calculated Difference</div>
-      <div class="ui-tile-value" style="color:{{ '#dc2626' if adjustment_amount > 0 else '#16a34a' if adjustment_amount < 0 else '#6b7280' }};font-weight:bold;">{% if physical_cash_available is not none %}Rs. {{ "{:,.0f}".format(adjustment_amount) }}{% else %}-{% endif %}</div>
-      <div class="ui-tile-sub">Closing - Physical</div>
+      <div class="ui-tile-label">Physical Cash</div>
+      <div class="ui-tile-value" style="color:#f97316;">{% if physical_cash_available is not none %}Rs. {{ "{:,.0f}".format(physical_cash_available) }}{% else %}-{% endif %}</div>
+      <div class="ui-tile-sub">Reconciliation for {{ adjustment_date_input }}</div>
     </div>
     <div class="ui-tile" style="border-left:4px solid #0f766e;">
       <div class="ui-tile-label">Next Day Opening</div>
-      <div class="ui-tile-value" style="color:#0f766e;font-weight:bold;">Rs. {{ "{:,.0f}".format(adjusted_closing_balance) }}</div>
-      <div class="ui-tile-sub">Carry-forward balance</div>
+      <div class="ui-tile-value" style="color:#0f766e;">Rs. {{ "{:,.0f}".format(adjusted_closing_balance) }}</div>
+      <div class="ui-tile-sub">Carry-forward</div>
     </div>
   </div>
 
-  {# Transactions table #}
   <div class="ui-card">
     <div class="ui-card-header">
       <h5><i class="bi bi-table me-2"></i> Cash Flow Transactions</h5>
@@ -568,59 +727,98 @@
         <thead>
           <tr>
             <th>Date</th>
+            <th>Type</th>
             <th>Source</th>
+            <th>Account</th>
             <th>Category</th>
             <th>Sub</th>
-            <th>Name / type</th>
-            <th>Account</th>
-            <th>Reference</th>
+            <th>Party</th>
             <th>Description</th>
-            <th class="text-end">Cash In</th>
-            <th class="text-end">Cash Out</th>
+            <th>Notes</th>
+            <th>Reference</th>
+            <th class="text-end">Received</th>
+            <th class="text-end">Spent</th>
+            <th class="text-end">Transfer</th>
             <th class="text-end">Running</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
           {% for r in rows %}
-          <tr>
+          <tr {% if r.status=='voided' %}class="text-muted"{% endif %}>
             <td>{{ r.date }}</td>
             <td>
-              {% if r.origin == 'recorded' %}
-              <span class="badge bg-warning text-dark">Recorded</span>
+              {% if r.type == 'in' %}<span class="badge bg-success">Received</span>
+              {% elif r.type == 'out' %}<span class="badge bg-danger">Spent</span>
+              {% else %}<span class="badge bg-info text-dark">Transfer</span>{% endif %}
+            </td>
+            <td>
+              {% if r.source == 'MANUAL' %}
+              <span class="badge bg-warning text-dark">Manual</span>
               {% else %}
-              <span class="badge bg-secondary">Derived</span>
+              <span class="badge bg-secondary">System</span>
               {% endif %}
               <div class="small text-muted">{{ r.origin_label or '' }}</div>
             </td>
+            <td>{{ r.account_display or '—' }}</td>
             <td>{{ r.category or '—' }}</td>
             <td>{{ r.subcategory or '—' }}</td>
             <td>
               {{ r.party_name or '—' }}
               {% if r.party_type %}<div class="small text-muted">{{ r.party_type }}</div>{% endif %}
             </td>
-            <td>{{ r.account_name or '—' }}</td>
-            <td><code>{{ r.reference }}</code></td>
             <td>{{ r.description }}</td>
+            <td>{{ r.note or '—' }}</td>
+            <td><code>{{ r.reference }}</code></td>
             <td class="text-end" style="color:#16a34a;font-weight:500;">
               {% if r.cash_in %}Rs. {{ "{:,.0f}".format(r.cash_in) }}{% endif %}
             </td>
             <td class="text-end" style="color:#dc2626;font-weight:500;">
               {% if r.cash_out %}Rs. {{ "{:,.0f}".format(r.cash_out) }}{% endif %}
             </td>
+            <td class="text-end">
+              {% if r.transfer_amount %}Rs. {{ "{:,.0f}".format(r.transfer_amount) }}{% endif %}
+            </td>
             <td class="text-end fw-bold">Rs. {{ "{:,.0f}".format(r.running_balance) }}</td>
+            <td class="text-nowrap">
+              {% if r.entry_id %}
+              <button type="button" class="btn btn-sm btn-outline-secondary cf-view-btn" data-entry-id="{{ r.entry_id }}">View</button>
+              {% endif %}
+              {% if r.entry_id and r.source == 'MANUAL' %}
+                {% if r.status != 'voided' %}
+                <button type="button" class="btn btn-sm btn-outline-primary cf-edit-btn" data-entry-id="{{ r.entry_id }}">Edit</button>
+                <form method="POST" class="d-inline" onsubmit="return confirm('Void this transaction and reverse the account effect?');">
+                  <input type="hidden" name="action" value="void_entry">
+                  <input type="hidden" name="entry_id" value="{{ r.entry_id }}">
+                  <input type="hidden" name="from_date" value="{{ from_date }}">
+                  <input type="hidden" name="to_date" value="{{ to_date }}">
+                  <input type="text" name="void_reason" class="form-control form-control-sm d-inline-block" style="width:110px;" placeholder="Reason">
+                  <button class="btn btn-sm btn-outline-danger" type="submit">Void</button>
+                </form>
+                {% else %}
+                <form method="POST" class="d-inline">
+                  <input type="hidden" name="action" value="restore_entry">
+                  <input type="hidden" name="entry_id" value="{{ r.entry_id }}">
+                  <input type="hidden" name="from_date" value="{{ from_date }}">
+                  <input type="hidden" name="to_date" value="{{ to_date }}">
+                  <button class="btn btn-sm btn-outline-success" type="submit">Restore</button>
+                </form>
+                {% endif %}
+              {% endif %}
+            </td>
           </tr>
           {% else %}
           <tr>
-            <td colspan="12" class="ui-empty">No money movements in this date range.</td>
+            <td colspan="15" class="ui-empty">No money movements match these filters.</td>
           </tr>
           {% endfor %}
         </tbody>
         <tfoot>
           <tr style="background:var(--ui-surface-2,#f1f5f9);font-weight:bold;">
-            <td colspan="8">Totals</td>
+            <td colspan="10">Totals</td>
             <td class="text-end" style="color:#16a34a;">Rs. {{ "{:,.0f}".format(total_cash_in) }}</td>
             <td class="text-end" style="color:#dc2626;">Rs. {{ "{:,.0f}".format(total_cash_out) }}</td>
+            <td class="text-end">Rs. {{ "{:,.0f}".format(total_transfer_in or 0) }}</td>
             <td class="text-end" style="color:#0369a1;">Rs. {{ "{:,.0f}".format(closing_balance) }}</td>
             <td></td>
           </tr>
@@ -649,7 +847,7 @@
     </div>
     <div class="col-md-4">
       <div class="ui-card">
-        <div class="ui-card-header"><h5 class="mb-0">By person / bank / loan</h5></div>
+        <div class="ui-card-header"><h5 class="mb-0">By party</h5></div>
         <div class="table-responsive">
           <table class="ui-table">
             <thead><tr><th>Type</th><th class="text-end">In</th><th class="text-end">Out</th></tr></thead>
@@ -666,7 +864,7 @@
     </div>
     <div class="col-md-4">
       <div class="ui-card">
-        <div class="ui-card-header"><h5 class="mb-0">By our account</h5></div>
+        <div class="ui-card-header"><h5 class="mb-0">By account</h5></div>
         <div class="table-responsive">
           <table class="ui-table">
             <thead><tr><th>Account</th><th class="text-end">In</th><th class="text-end">Out</th></tr></thead>
@@ -684,22 +882,249 @@
   </div>
 
 </div>
+
+<div class="modal fade" id="cfDetailModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Cash flow entry</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="cfDetailBody">Loading…</div>
+    </div>
+  </div>
+</div>
 <script>
-window.onCfCategoryPicked = function(code) {
-  document.querySelectorAll('#cfSubList .combobox-item').forEach(function(it) {
-    const ok = !code || String(it.getAttribute('data-category-id')) === String(code);
-    it.style.display = ok ? '' : 'none';
-  });
-  document.getElementById('cfSubcategoryId').value = '';
-  document.getElementById('cfSubSearch').value = '';
-};
-window.onCfPartyPicked = function(code, name) {
-  const item = document.querySelector('#cfPartyList .combobox-item[data-combo-code="' + code + '"]');
-  if (item && item.dataset.partyType) {
-    const sel = document.getElementById('cfPartyType');
-    if (sel) sel.value = item.dataset.partyType;
+(function () {
+  const form = document.getElementById('cfRecordForm');
+  const directionEl = document.getElementById('cfDirection');
+  const accountLabel = document.getElementById('cfAccountLabel');
+  const partyLabel = document.getElementById('cfPartyLabel');
+  const destWrap = document.querySelector('.cf-field-dest');
+  const catFields = document.querySelectorAll('.cf-field-cat');
+  const partyFields = document.querySelectorAll('.cf-field-party');
+  const toAccount = document.getElementById('cfToAccountId');
+  const catId = document.getElementById('cfCategoryId');
+  const catSearch = document.getElementById('cfCategorySearch');
+  const catList = document.getElementById('cfCategoryList');
+  const subId = document.getElementById('cfSubcategoryId');
+  const subSearch = document.getElementById('cfSubSearch');
+  const subList = document.getElementById('cfSubList');
+  const keyEl = document.getElementById('cfIdempotencyKey');
+  const saveBtn = document.getElementById('cfSaveBtn');
+
+  function uuid() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return 'cf-' + Date.now() + '-' + Math.random().toString(16).slice(2);
   }
-};
+  if (keyEl && !keyEl.value) keyEl.value = uuid();
+
+  function fillList(listEl, items, inputId, valueId) {
+    listEl.innerHTML = '';
+    (items || []).forEach(function (item) {
+      const div = document.createElement('div');
+      div.className = 'combobox-item';
+      div.setAttribute('data-combo-code', item.id);
+      div.setAttribute('data-combo-name', item.name);
+      div.setAttribute('data-combo-input', inputId);
+      div.setAttribute('data-combo-value-input', valueId);
+      div.textContent = item.name;
+      if (item.direction) {
+        const span = document.createElement('span');
+        span.className = 'text-muted';
+        span.textContent = ' (' + item.direction + ')';
+        div.appendChild(span);
+      }
+      listEl.appendChild(div);
+    });
+  }
+
+  function loadCategories() {
+    const dir = directionEl.value;
+    if (dir === 'transfer') return Promise.resolve();
+    return fetch("{{ url_for('cash_flow_categories_meta') }}?direction=" + encodeURIComponent(dir), { credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        fillList(catList, data.categories || [], 'cfCategorySearch', 'cfCategoryId');
+      })
+      .catch(function () {});
+  }
+
+  function loadSubcategories(categoryId) {
+    subId.value = '';
+    subSearch.value = '';
+    if (!categoryId) {
+      fillList(subList, [], 'cfSubSearch', 'cfSubcategoryId');
+      return Promise.resolve();
+    }
+    return fetch("{{ url_for('cash_flow_subcategories_meta') }}?category_id=" + encodeURIComponent(categoryId), { credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        fillList(subList, data.subcategories || [], 'cfSubSearch', 'cfSubcategoryId');
+      })
+      .catch(function () {});
+  }
+
+  function syncType() {
+    const dir = directionEl.value;
+    const isTransfer = dir === 'transfer';
+    destWrap.classList.toggle('d-none', !isTransfer);
+    catFields.forEach(function (el) { el.classList.toggle('d-none', isTransfer); });
+    partyFields.forEach(function (el) { el.classList.toggle('d-none', isTransfer); });
+    toAccount.required = isTransfer;
+    catSearch.required = !isTransfer;
+    if (dir === 'in') {
+      accountLabel.innerHTML = 'Received into account <span class="text-danger">*</span>';
+      partyLabel.textContent = 'Who / source';
+    } else if (dir === 'out') {
+      accountLabel.innerHTML = 'Spent from account <span class="text-danger">*</span>';
+      partyLabel.textContent = 'Who / recipient';
+    } else {
+      accountLabel.innerHTML = 'Transfer from account <span class="text-danger">*</span>';
+    }
+    catId.value = '';
+    catSearch.value = '';
+    loadCategories();
+    loadSubcategories('');
+  }
+
+  window.onCfCategoryPicked = function (code) {
+    loadSubcategories(code);
+  };
+  window.onCfPartyPicked = function (code) {
+    const item = document.querySelector('#cfPartyList .combobox-item[data-combo-code="' + code + '"]');
+    if (item && item.dataset.partyType) {
+      const sel = document.getElementById('cfPartyType');
+      if (sel) sel.value = item.dataset.partyType;
+    }
+  };
+
+  directionEl.addEventListener('change', syncType);
+  catSearch.addEventListener('focus', function () { if (typeof showCombobox === 'function') showCombobox('cfCategorySearch', 'cfCategoryList'); });
+  catSearch.addEventListener('input', function () {
+    catId.value = '';
+    if (typeof filterCombobox === 'function') filterCombobox('cfCategorySearch', 'cfCategoryList');
+  });
+  subSearch.addEventListener('focus', function () { if (typeof showCombobox === 'function') showCombobox('cfSubSearch', 'cfSubList'); });
+  subSearch.addEventListener('input', function () {
+    subId.value = '';
+    if (typeof filterCombobox === 'function') filterCombobox('cfSubSearch', 'cfSubList');
+  });
+  const partySearch = document.getElementById('cfPartySearch');
+  if (partySearch) {
+    partySearch.addEventListener('focus', function () { if (typeof showCombobox === 'function') showCombobox('cfPartySearch', 'cfPartyList'); });
+    partySearch.addEventListener('input', function () {
+      document.getElementById('cfPartyId').value = '';
+      if (typeof filterCombobox === 'function') filterCombobox('cfPartySearch', 'cfPartyList');
+    });
+  }
+
+  form.addEventListener('submit', function () {
+    saveBtn.disabled = true;
+  });
+
+  function resetEdit() {
+    document.getElementById('cfFormAction').value = 'record_movement';
+    document.getElementById('cfEntryId').value = '';
+    document.getElementById('cfSaveLabel').textContent = 'Save';
+    document.querySelectorAll('.cf-edit-reason').forEach(function (el) { el.classList.add('d-none'); });
+    form.reset();
+    keyEl.value = uuid();
+    syncType();
+  }
+  const cancelBtn = document.getElementById('cfCancelEdit');
+  if (cancelBtn) cancelBtn.addEventListener('click', resetEdit);
+
+  document.querySelectorAll('.cf-edit-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      const id = btn.getAttribute('data-entry-id');
+      fetch("{{ url_for('cash_flow') }}/entry/" + id + ".json", { credentials: 'same-origin' })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          document.getElementById('cfFormAction').value = 'edit_entry';
+          document.getElementById('cfEntryId').value = data.id;
+          document.getElementById('cfSaveLabel').textContent = 'Update';
+          document.querySelectorAll('.cf-edit-reason').forEach(function (el) { el.classList.remove('d-none'); });
+          directionEl.value = data.direction;
+          document.getElementById('cfAmount').value = data.amount;
+          document.getElementById('cfAccountId').value = data.account_id || '';
+          document.getElementById('cfToAccountId').value = data.destination_account_id || '';
+          document.getElementById('cfDate').value = data.date_posted || '';
+          document.getElementById('cfDescription').value = data.description || '';
+          document.getElementById('cfNote').value = data.note || '';
+          document.getElementById('cfReference').value = data.reference || '';
+          document.getElementById('cfPartyType').value = data.party_type || 'other';
+          document.getElementById('cfPartySearch').value = data.party_name || '';
+          document.getElementById('cfPartyId').value = data.party_id || '';
+          syncType();
+          catId.value = data.category_id || '';
+          catSearch.value = data.category_name || '';
+          loadSubcategories(data.category_id || '').then(function () {
+            subId.value = data.subcategory_id || '';
+            subSearch.value = data.subcategory_name || '';
+          });
+          form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    });
+  });
+
+  const physical = document.getElementById('physical_cash_input');
+  if (physical) {
+    physical.addEventListener('input', function () {
+      const value = parseFloat(this.value) || 0;
+      const calculated = {{ closing_balance }};
+      const difference = calculated - value;
+      const display = document.getElementById('difference_display');
+      const color = difference > 0 ? '#dc2626' : (difference < 0 ? '#16a34a' : '#6b7280');
+      display.textContent = 'Rs. ' + difference.toLocaleString('en-PK', {minimumFractionDigits: 0, maximumFractionDigits: 2});
+      display.style.color = color;
+    });
+    physical.dispatchEvent(new Event('input'));
+  }
+
+  syncType();
+})();
+</script>
+{% endblock %}
+
+{% endif %}
+a.account_id || '';
+          document.getElementById('cfToAccountId').value = data.destination_account_id || '';
+          document.getElementById('cfDate').value = data.date_posted || '';
+          document.getElementById('cfDescription').value = data.description || '';
+          document.getElementById('cfNote').value = data.note || '';
+          document.getElementById('cfReference').value = data.reference || '';
+          document.getElementById('cfPartyType').value = data.party_type || 'other';
+          document.getElementById('cfPartySearch').value = data.party_name || '';
+          document.getElementById('cfPartyId').value = data.party_id || '';
+          syncType();
+          catId.value = data.category_id || '';
+          catSearch.value = data.category_name || '';
+          loadSubcategories(data.category_id || '').then(function () {
+            subId.value = data.subcategory_id || '';
+            subSearch.value = data.subcategory_name || '';
+          });
+          form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    });
+  });
+
+  const physical = document.getElementById('physical_cash_input');
+  if (physical) {
+    physical.addEventListener('input', function () {
+      const value = parseFloat(this.value) || 0;
+      const calculated = {{ closing_balance }};
+      const difference = calculated - value;
+      const display = document.getElementById('difference_display');
+      const color = difference > 0 ? '#dc2626' : (difference < 0 ? '#16a34a' : '#6b7280');
+      display.textContent = 'Rs. ' + difference.toLocaleString('en-PK', {minimumFractionDigits: 0, maximumFractionDigits: 2});
+      display.style.color = color;
+    });
+    physical.dispatchEvent(new Event('input'));
+  }
+
+  syncType();
+})();
 </script>
 {% endblock %}
 

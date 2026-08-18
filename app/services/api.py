@@ -94,6 +94,8 @@ from app.services.drafts import (  # noqa: F401
     _collect_direct_sale_form_draft,
     _infer_driver_name_from_refs,
     _parse_delivery_allocations,
+    _parse_transaction_return_type,
+    _returnable_qty_for_name,
     _safe_int,
     _stash_direct_sale_form_draft,
     _summarize_direct_sale_draft,
@@ -178,10 +180,12 @@ from app.services.logging_exc import (  # noqa: F401
     _log_unhandled_exception,
 )
 from app.services.lookups import (  # noqa: F401
+    MATERIAL_NOT_SELECTED_MSG,
     get_client_by_input,
     get_material_by_input,
     get_or_create_delivery_person,
     get_supplier_by_input,
+    resolve_transaction_material,
 )
 from app.services.notify import (  # noqa: F401
     _build_notification_rows,
@@ -410,6 +414,8 @@ __all__ = [
     '_collect_direct_sale_form_draft',
     '_infer_driver_name_from_refs',
     '_parse_delivery_allocations',
+    '_parse_transaction_return_type',
+    '_returnable_qty_for_name',
     '_safe_int',
     '_stash_direct_sale_form_draft',
     '_summarize_direct_sale_draft',
@@ -474,10 +480,12 @@ __all__ = [
     'acquire_system_lock',
     'release_system_lock',
     '_log_unhandled_exception',
+    'MATERIAL_NOT_SELECTED_MSG',
     'get_client_by_input',
     'get_material_by_input',
     'get_or_create_delivery_person',
     'get_supplier_by_input',
+    'resolve_transaction_material',
     '_build_notification_rows',
     '_resolve_reminder_with_contact',
     '_can_manage_categories',

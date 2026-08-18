@@ -36,8 +36,19 @@ def add_record():
 
     if entry_type == 'OUT' and client_obj:
         mat_input = request.form.get('material', '')
-        mat_obj = get_material_by_input(mat_input)
-        mat_name = mat_obj.name if mat_obj else mat_input
+        try:
+            mat_obj = resolve_transaction_material(
+                material_id=request.form.get('material_id'),
+                typed_text=mat_input,
+                require_active=True,
+            )
+        except ValueError as ve:
+            flash(str(ve), 'danger')
+            return redirect(url_for('dispatching'))
+        if not mat_obj:
+            flash(MATERIAL_NOT_SELECTED_MSG, 'danger')
+            return redirect(url_for('dispatching'))
+        mat_name = mat_obj.name
         mat_key = _material_norm_key(mat_name)
 
         try:

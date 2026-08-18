@@ -109,22 +109,35 @@ def add_material_return():
                 return redirect(url_for('material_returns_page'))
 
         materials_list = request.form.getlist('material_name[]')
+        material_ids = request.form.getlist('material_id[]')
         qtys = request.form.getlist('qty[]')
-        return_type = (request.form.get('return_type') or 'normal').strip().lower()
-        if return_type not in ['normal', 'booked']:
-            return_type = 'normal'
+        try:
+            return_type = _parse_transaction_return_type(request.form, default='normal')
+        except ValueError as ve:
+            flash(str(ve), 'danger')
+            return redirect(url_for('material_returns_page'))
         unit_rates = request.form.getlist('unit_rate[]')
         rent_rates = request.form.getlist('rent_rate[]')
         parsed_items = []
-        for mat_raw, qty_raw, unit_raw, rent_raw in zip_longest(materials_list, qtys, unit_rates, rent_rates, fillvalue=''):
+        for mat_raw, mid_raw, qty_raw, unit_raw, rent_raw in zip_longest(
+            materials_list, material_ids, qtys, unit_rates, rent_rates, fillvalue=''
+        ):
             mat_txt = (mat_raw or '').strip()
-            if not mat_txt:
-                continue
-            mat_obj = get_material_by_input(mat_txt)
-            if not mat_obj or not mat_obj.is_active:
-                flash(f'Material "{mat_txt}" was not found or is suspended.', 'danger')
-                return redirect(url_for('material_returns_page'))
             qty_val = _to_float_or_zero(qty_raw)
+            if not mat_txt and not str(mid_raw or '').strip() and qty_val <= 0:
+                continue
+            try:
+                mat_obj = resolve_transaction_material(
+                    material_id=mid_raw,
+                    typed_text=mat_txt,
+                    require_active=True,
+                )
+            except ValueError as ve:
+                flash(str(ve), 'danger')
+                return redirect(url_for('material_returns_page'))
+            if not mat_obj:
+                flash(MATERIAL_NOT_SELECTED_MSG, 'danger')
+                return redirect(url_for('material_returns_page'))
             if qty_val <= 0:
                 continue
 
@@ -141,14 +154,20 @@ def add_material_return():
                     return redirect(url_for('material_returns_page'))
                 rent_rate_val = _to_float_or_zero(rent_raw)
             parsed_items.append({
+                'material_id': mat_obj.id,
                 'material_name': mat_obj.name,
                 'qty': qty_val,
                 'unit_rate': unit_rate_val,
-                'rent_rate': rent_rate_val
+                'rent_rate': rent_rate_val,
+                'return_type': return_type,
             })
 
         if not parsed_items:
             flash('Add at least one valid return item with qty > 0.', 'danger')
+            return redirect(url_for('material_returns_page'))
+
+        if any(item.get('return_type') != return_type for item in parsed_items):
+            flash('Return Type must be the same for every selected item in this return.', 'danger')
             return redirect(url_for('material_returns_page'))
 
         returnable_map = (
@@ -156,11 +175,16 @@ def add_material_return():
             if return_type == 'booked'
             else _client_material_returnable_qty_map(client)
         )
+        requested_by_name = {}
         for item in parsed_items:
-            allowed = float(returnable_map.get(item['material_name'], 0) or 0)
-            if item['qty'] > (allowed + 0.0001):
+            requested_by_name[item['material_name']] = (
+                float(requested_by_name.get(item['material_name'], 0) or 0) + float(item['qty'] or 0)
+            )
+        for mat_name, qty_needed in requested_by_name.items():
+            allowed = float(_returnable_qty_for_name(returnable_map, mat_name) or 0)
+            if qty_needed > (allowed + 0.0001):
                 flash(
-                    f"Cannot return {item['qty']} of {item['material_name']}. "
+                    f"Cannot return {qty_needed} of {mat_name}. "
                     f"Maximum returnable is {round(allowed, 2)}.",
                     'danger'
                 )
@@ -273,9 +297,11 @@ def edit_material_return(id):
 
         # Editing return-type is risky because it changes which dispatch pool it validates against.
         existing_type = (getattr(ret, 'return_type', None) or 'normal').strip().lower()
-        new_type = (request.form.get('return_type') or existing_type).strip().lower()
-        if new_type not in ['normal', 'booked']:
-            new_type = existing_type
+        try:
+            new_type = _parse_transaction_return_type(request.form, default=existing_type)
+        except ValueError as ve:
+            flash(str(ve), 'danger')
+            return redirect(url_for('material_returns_page', edit_id=ret.id))
         if new_type != existing_type:
             flash('Return type cannot be changed on edit. Delete and create a new return.', 'danger')
             return redirect(url_for('material_returns_page', edit_id=ret.id))
@@ -284,21 +310,33 @@ def edit_material_return(id):
         note = (request.form.get('note') or '').strip()
 
         materials_list = request.form.getlist('material_name[]')
+        material_ids = request.form.getlist('material_id[]')
         qtys = request.form.getlist('qty[]')
         unit_rates = request.form.getlist('unit_rate[]')
         rent_rates = request.form.getlist('rent_rate[]')
+        historical_names = {(it.material_name or '').strip().lower() for it in (ret.items or [])}
 
         parsed_items = []
-        for mat_raw, qty_raw, unit_raw, rent_raw in zip_longest(materials_list, qtys, unit_rates, rent_rates, fillvalue=''):
+        for mat_raw, mid_raw, qty_raw, unit_raw, rent_raw in zip_longest(
+            materials_list, material_ids, qtys, unit_rates, rent_rates, fillvalue=''
+        ):
             mat_txt = (mat_raw or '').strip()
-            if not mat_txt:
-                continue
-            mat_obj = get_material_by_input(mat_txt)
-            historical_names = {(it.material_name or '').strip().lower() for it in (ret.items or [])}
-            if not mat_obj or (not mat_obj.is_active and mat_obj.name.strip().lower() not in historical_names):
-                flash(f'Material "{mat_txt}" was not found or is suspended.', 'danger')
-                return redirect(url_for('material_returns_page', edit_id=ret.id))
             qty_val = _to_float_or_zero(qty_raw)
+            if not mat_txt and not str(mid_raw or '').strip() and qty_val <= 0:
+                continue
+            try:
+                mat_obj = resolve_transaction_material(
+                    material_id=mid_raw,
+                    typed_text=mat_txt,
+                    require_active=True,
+                    allow_inactive_names=historical_names,
+                )
+            except ValueError as ve:
+                flash(str(ve), 'danger')
+                return redirect(url_for('material_returns_page', edit_id=ret.id))
+            if not mat_obj:
+                flash(MATERIAL_NOT_SELECTED_MSG, 'danger')
+                return redirect(url_for('material_returns_page', edit_id=ret.id))
             if qty_val <= 0:
                 continue
 
@@ -316,14 +354,20 @@ def edit_material_return(id):
                 rent_rate_val = _to_float_or_zero(rent_raw)
 
             parsed_items.append({
+                'material_id': mat_obj.id,
                 'material_name': mat_obj.name,
                 'qty': qty_val,
                 'unit_rate': unit_rate_val,
-                'rent_rate': rent_rate_val
+                'rent_rate': rent_rate_val,
+                'return_type': existing_type,
             })
 
         if not parsed_items:
             flash('Add at least one valid return item with qty > 0.', 'danger')
+            return redirect(url_for('material_returns_page', edit_id=ret.id))
+
+        if any(item.get('return_type') != existing_type for item in parsed_items):
+            flash('Return Type must be the same for every selected item in this return.', 'danger')
             return redirect(url_for('material_returns_page', edit_id=ret.id))
 
         # Returnable qty check (add back this return's previous qty so edits can reduce/increase safely).
@@ -340,11 +384,16 @@ def edit_material_return(id):
         for k, v in old_qty_by_material.items():
             returnable_map[k] = float(returnable_map.get(k, 0) or 0) + float(v or 0)
 
+        requested_by_name = {}
         for item in parsed_items:
-            allowed = float(returnable_map.get(item['material_name'], 0) or 0)
-            if item['qty'] > (allowed + 0.0001):
+            requested_by_name[item['material_name']] = (
+                float(requested_by_name.get(item['material_name'], 0) or 0) + float(item['qty'] or 0)
+            )
+        for mat_name, qty_needed in requested_by_name.items():
+            allowed = float(_returnable_qty_for_name(returnable_map, mat_name) or 0)
+            if qty_needed > (allowed + 0.0001):
                 flash(
-                    f"Cannot return {item['qty']} of {item['material_name']}. "
+                    f"Cannot return {qty_needed} of {mat_name}. "
                     f"Maximum returnable is {round(allowed, 2)}.",
                     'danger'
                 )

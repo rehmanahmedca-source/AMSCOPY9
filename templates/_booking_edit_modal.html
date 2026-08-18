@@ -38,6 +38,7 @@
                         <input type="hidden" name="booking_item_id[]" value="{{ item.id }}">
                         <div class="booking-item-grid">
                             <div class="position-relative">
+                                <input type="hidden" name="material_id[]" class="material-id-input" value="{% for mat in materials or [] %}{% if mat.name == item.material_name %}{{ mat.id }}{% endif %}{% endfor %}">
                                 <input type="text" name="material_name[]" class="form-control form-control-sm bg-dark text-white border-secondary price-trigger" value="{{ item.material_name }}" placeholder="Search material..." autocomplete="off" required>
                             </div>
                             <div>

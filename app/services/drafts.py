@@ -306,6 +306,64 @@ def _client_booked_material_returnable_qty_map(client_obj):
     }
 
 
+def _returnable_qty_for_name(qty_map, name):
+    """Look up returnable qty using exact name, then case, then normalized key.
+
+    The public maps stay keyed by the stored Entry.material text so existing
+    callers are unchanged. Validation uses this helper so the same Material
+    Master record is not split across spelling variants.
+    """
+    if not qty_map:
+        return 0.0
+    exact = str(name or '').strip()
+    if not exact:
+        return 0.0
+    if exact in qty_map:
+        return float(qty_map.get(exact) or 0)
+    lower = exact.lower()
+    for key, qty in qty_map.items():
+        if str(key or '').strip().lower() == lower:
+            return float(qty or 0)
+
+    def _norm(value):
+        txt = (value or '').strip().lower()
+        return re.sub(r'[^a-z0-9]+', '', txt)
+
+    needle = _norm(exact)
+    if not needle:
+        return 0.0
+    total = 0.0
+    matched = False
+    for key, qty in qty_map.items():
+        if _norm(key) == needle:
+            total += float(qty or 0)
+            matched = True
+    return total if matched else 0.0
+
+
+def _parse_transaction_return_type(form, default='normal'):
+    """Read the transaction-level Return Type. Per-item values cannot diverge."""
+    submitted = [
+        str(v or '').strip().lower()
+        for v in form.getlist('return_type')
+        if str(v or '').strip()
+    ]
+    if submitted:
+        unique = set(submitted)
+        if len(unique) > 1:
+            raise ValueError(
+                'Return Type must be the same for every selected item in this return.'
+            )
+        raw = submitted[0]
+    else:
+        raw = (form.get('return_type') or default or 'normal').strip().lower()
+    if not raw:
+        raw = default or 'normal'
+    if raw not in ('normal', 'booked'):
+        raise ValueError('Select a valid Return Type (Normal or Booked).')
+    return raw
+
+
 def _infer_driver_name_from_refs(refs, allow_booking=False):
     if not refs:
         return ''

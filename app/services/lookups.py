@@ -107,8 +107,17 @@ def get_client_by_input(input_str):
     return None
 
 
+MATERIAL_NOT_SELECTED_MSG = (
+    'Material not selected. Please select an existing material from the Material Master.'
+)
+
+
 def get_material_by_input(input_str):
-    """Helper to find material by name or code."""
+    """Helper to find material by name or code.
+
+    This is an exact identity lookup (case-insensitive). It never creates a
+    Material and never treats a partial search string as a match.
+    """
     if not input_str:
         return None
     input_str = input_str.strip()
@@ -117,6 +126,68 @@ def get_material_by_input(input_str):
     if mat: return mat
 
     mat = Material.query.filter(or_(Material.name.ilike(input_str), Material.code.ilike(input_str))).first()
+    return mat
+
+
+def _material_lookup_key(value):
+    return re.sub(r'\s+', ' ', (value or '').strip().lower())
+
+
+def _material_text_matches_record(mat, typed_text):
+    """True when typed text is empty or is exactly this material's name/code."""
+    typed = _material_lookup_key(typed_text)
+    if not typed:
+        return True
+    if not mat:
+        return False
+    return typed in {
+        _material_lookup_key(mat.name),
+        _material_lookup_key(mat.code),
+    }
+
+
+def resolve_transaction_material(material_id=None, typed_text=None, *, require_active=True, allow_inactive_names=None):
+    """Resolve an existing Material Master record for an inventory transaction.
+
+    ``material_id`` is authoritative when provided. Typed text is only a
+    search/display value and is never used to create a Material.
+
+    Returns the Material, or None when both id and text are empty (blank row).
+    Raises ValueError when the user supplied text/id that is not a selected
+    existing Material Master record.
+    """
+    allow_inactive_names = {
+        (n or '').strip().lower()
+        for n in (allow_inactive_names or [])
+        if (n or '').strip()
+    }
+
+    raw_id = '' if material_id is None else str(material_id).strip()
+    typed = (typed_text or '').strip()
+    mat = None
+
+    if raw_id:
+        try:
+            mid = int(raw_id)
+        except (TypeError, ValueError):
+            raise ValueError(MATERIAL_NOT_SELECTED_MSG)
+        mat = db.session.get(Material, mid)
+        if not mat:
+            raise ValueError(MATERIAL_NOT_SELECTED_MSG)
+        # A stale hidden id after the user edited the search box is invalid.
+        if typed and not _material_text_matches_record(mat, typed):
+            raise ValueError(MATERIAL_NOT_SELECTED_MSG)
+    elif typed:
+        mat = get_material_by_input(typed)
+        if not mat:
+            raise ValueError(MATERIAL_NOT_SELECTED_MSG)
+    else:
+        return None
+
+    if require_active and not bool(getattr(mat, 'is_active', True)):
+        hist = (mat.name or '').strip().lower()
+        if hist not in allow_inactive_names:
+            raise ValueError(f'Material "{mat.name}" was not found or is suspended.')
     return mat
 
 

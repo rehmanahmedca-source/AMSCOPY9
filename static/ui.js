@@ -120,4 +120,65 @@
         initAll: initAll,
         initDatePickers: initDatePickers
     };
+
+    function findMaterialIdInput(input) {
+        if (!input) return null;
+        var named = input.getAttribute("data-material-id-input") || "";
+        if (named && document.getElementById(named)) return document.getElementById(named);
+        var wrap = input.closest(".position-relative") || input.closest(".compact-item-row") || input.closest(".return-row") || input.parentElement;
+        if (!wrap) return null;
+        return wrap.querySelector('input[name="material_id[]"], input[name="alternate_material_id[]"], input[name="material_id"]');
+    }
+    window.setSelectedMaterialId = function (input, materialId, selectedName) {
+        if (!input) return;
+        var hid = findMaterialIdInput(input);
+        if (hid) hid.value = materialId || "";
+        if (materialId) {
+            input.dataset.selectedMaterialId = String(materialId);
+            input.dataset.selectedMaterialName = selectedName || input.value || "";
+        } else {
+            delete input.dataset.selectedMaterialId;
+            delete input.dataset.selectedMaterialName;
+        }
+    };
+    window.clearSelectedMaterialId = function (input) {
+        window.setSelectedMaterialId(input, "", "");
+    };
+    document.addEventListener("input", function (e) {
+        var input = e.target && e.target.closest
+            ? e.target.closest('input[name="product_name[]"], input[name="material_name[]"], input[name="alternate_material[]"], input[name="material"]')
+            : null;
+        if (!input) return;
+        if (input.dataset.comboSuppress === "1") return;
+        var selectedName = (input.dataset.selectedMaterialName || "").trim().toLowerCase();
+        var current = (input.value || "").trim().toLowerCase();
+        if (!selectedName || current !== selectedName) {
+            window.clearSelectedMaterialId(input);
+        }
+    });
+    document.addEventListener("submit", function (e) {
+        var form = e.target;
+        if (!form || form.tagName !== "FORM") return;
+        if (form.dataset.skipValidation === "1") return;
+        var rows = form.querySelectorAll('input[name="product_name[]"], input[name="material_name[]"], input[name="material"]');
+        if (!rows.length) return;
+        var issues = [];
+        rows.forEach(function (input, idx) {
+            var typed = (input.value || "").trim();
+            if (!typed) return;
+            var hid = findMaterialIdInput(input);
+            var selectedId = (hid && hid.value) || input.dataset.selectedMaterialId || "";
+            var selectedName = (input.dataset.selectedMaterialName || "").trim();
+            if (selectedId && selectedName && selectedName.toLowerCase() === typed.toLowerCase()) return;
+            if (selectedId && !selectedName) return;
+            var known = window.AMS_KNOWN_MATERIAL_NAMES;
+            if (known && (known.has(typed) || known.has(typed.toLowerCase()))) return;
+            issues.push(idx + 1);
+        });
+        if (issues.length) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            alert("Material not selected. Please select an existing material from the Material Master.");
+        }
+    }, true);
 })();

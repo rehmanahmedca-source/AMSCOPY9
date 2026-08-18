@@ -649,14 +649,15 @@
                                 <div class="sale-item-grid">
                                     <div class="position-relative">
                                         <div class="input-group input-group-sm">
-                                            <input type="text" name="product_name[]" id="addSaleMaterialSearch0" class="form-control bg-dark text-white border-secondary price-trigger w-material" placeholder="Search material..." autocomplete="off" required data-combo-list="addSaleMaterialList0" data-combo-display="addSaleMaterialDisplay0">
+                                            <input type="hidden" name="material_id[]" id="addSaleMaterialId0" class="material-id-input" value="">
+                                            <input type="text" name="product_name[]" id="addSaleMaterialSearch0" class="form-control bg-dark text-white border-secondary price-trigger w-material" placeholder="Search material..." autocomplete="off" required data-combo-list="addSaleMaterialList0" data-combo-display="addSaleMaterialDisplay0" data-material-id-input="addSaleMaterialId0">
                                             <button class="btn btn-outline-secondary material-toggle-btn" type="button" data-combo-toggle data-combo-list="addSaleMaterialList0" data-combo-input="addSaleMaterialSearch0">
                                                 <i class="bi bi-chevron-down text-warning"></i>
                                             </button>
                                         </div>
                                         <div id="addSaleMaterialList0" class="combobox-list shadow-lg" style="display: none;">
                                             {% for mat in materials %}
-                                            <div class="combobox-item" data-value="{{ mat.name }}" data-combo-code="{{ mat.name }}" data-combo-name="{{ mat.name }}" data-combo-input="addSaleMaterialSearch0" data-combo-display="addSaleMaterialDisplay0" data-combo-after="onSaleMaterialPicked">
+                                            <div class="combobox-item" data-value="{{ mat.name }}" data-material-id="{{ mat.id }}" data-combo-code="{{ mat.name }}" data-combo-name="{{ mat.name }}" data-combo-input="addSaleMaterialSearch0" data-combo-display="addSaleMaterialDisplay0" data-combo-after="onSaleMaterialPicked">
                                                 <span class="fw-bold text-warning code-span">{{ mat.name }}</span>
                                             </div>
                                             {% endfor %}
@@ -684,14 +685,15 @@
                                     </div>
                                     <div class="position-relative">
                                         <div class="input-group input-group-sm">
-                                            <input type="text" name="alternate_material[]" id="addSaleAltMaterialSearch0" class="form-control bg-dark text-white border-secondary alt-material-input w-alt-material" placeholder="Alternate (optional)" autocomplete="off" data-combo-list="addSaleAltMaterialList0" data-combo-display="addSaleAltMaterialDisplay0">
+                                            <input type="hidden" name="alternate_material_id[]" id="addSaleAltMaterialId0" class="alt-material-id-input" value="">
+                                            <input type="text" name="alternate_material[]" id="addSaleAltMaterialSearch0" class="form-control bg-dark text-white border-secondary alt-material-input w-alt-material" placeholder="Alternate (optional)" autocomplete="off" data-combo-list="addSaleAltMaterialList0" data-combo-display="addSaleAltMaterialDisplay0" data-material-id-input="addSaleAltMaterialId0">
                                             <button class="btn btn-outline-secondary alt-material-toggle-btn" type="button" data-combo-toggle data-combo-list="addSaleAltMaterialList0" data-combo-input="addSaleAltMaterialSearch0">
                                                 <i class="bi bi-chevron-down text-warning"></i>
                                             </button>
                                         </div>
                                         <div id="addSaleAltMaterialList0" class="combobox-list alt-material-list shadow-lg" style="display: none;">
                                             {% for mat in materials %}
-                                            <div class="combobox-item" data-value="{{ mat.name }}" data-combo-code="{{ mat.name }}" data-combo-name="{{ mat.name }}" data-combo-input="addSaleAltMaterialSearch0" data-combo-display="addSaleAltMaterialDisplay0">
+                                            <div class="combobox-item" data-value="{{ mat.name }}" data-material-id="{{ mat.id }}" data-combo-code="{{ mat.name }}" data-combo-name="{{ mat.name }}" data-combo-input="addSaleAltMaterialSearch0" data-combo-display="addSaleAltMaterialDisplay0">
                                                 <span class="fw-bold text-warning code-span">{{ mat.name }}</span>
                                             </div>
                                             {% endfor %}
@@ -734,8 +736,7 @@
                                     <label class="text-white-50 small fw-bold mb-1">RENT CHARGED TO CLIENT (TOTAL)</label>
                                     <input type="number" step="0.01" class="form-control bg-dark text-white border-secondary rent-charged-total" value="0" readonly>
                                 </div>
-                            </div>
-                            <div class="col-sm-4">
+                               <div class="col-sm-4">
                                 <div class="mb-3">
                                     <label class="text-white-50 small fw-bold mb-1">DELIVERY PERSON RENT (ACTUAL)</label>
                                     <input type="number" step="0.01" name="delivery_rent" class="form-control bg-dark text-white border-secondary delivery-rent-total" value="0" readonly>
@@ -1012,6 +1013,12 @@ const knownClientCodes = new Set({{ (clients | map(attribute='code') | list)|toj
 const knownClientNames = new Set({{ (clients | map(attribute='name') | list)|tojson }});
 const knownMaterialNames = new Set({{ (materials | map(attribute='name') | list)|tojson }});
 const knownMaterialCodes = new Set({{ (materials | map(attribute='code') | list)|tojson }});
+window.AMS_KNOWN_MATERIAL_NAMES = new Set([
+    ...Array.from(knownMaterialNames),
+    ...Array.from(knownMaterialNames).map((n) => String(n || '').toLowerCase()),
+    ...Array.from(knownMaterialCodes),
+    ...Array.from(knownMaterialCodes).map((n) => String(n || '').toLowerCase()),
+]);
 const saleFormDraft = {{ (sale_form_draft if sale_form_draft is defined else None)|tojson }};
 const resumeMode = {{ (resume_mode if resume_mode is defined else '')|tojson }};
 const holdSaleEndpoint = {{ url_for('hold_direct_sale')|tojson }};
@@ -1074,6 +1081,13 @@ function prepareSaleMaterialComboboxRow(row, idx) {
         `addSaleMaterialSearch${idx}`, `addSaleMaterialList${idx}`, `addSaleMaterialDisplay${idx}`,
         'onSaleMaterialPicked');
     input.value = '';
+    const matIdInput = row.querySelector('.material-id-input, input[name="material_id[]"]');
+    if (matIdInput) {
+        matIdInput.id = `addSaleMaterialId${idx}`;
+        matIdInput.value = '';
+        input.setAttribute('data-material-id-input', matIdInput.id);
+    }
+    if (typeof window.clearSelectedMaterialId === 'function') window.clearSelectedMaterialId(input);
 
     const altInput = row.querySelector('.alt-material-input');
     const altList = row.querySelector('.alt-material-list');
@@ -1082,6 +1096,13 @@ function prepareSaleMaterialComboboxRow(row, idx) {
         wireComboField(altInput, row.querySelector('.alt-material-toggle-btn'), altList, altDisplay,
             `addSaleAltMaterialSearch${idx}`, `addSaleAltMaterialList${idx}`, `addSaleAltMaterialDisplay${idx}`);
         altInput.value = '';
+        const altIdInput = row.querySelector('.alt-material-id-input, input[name="alternate_material_id[]"]');
+        if (altIdInput) {
+            altIdInput.id = `addSaleAltMaterialId${idx}`;
+            altIdInput.value = '';
+            altInput.setAttribute('data-material-id-input', altIdInput.id);
+        }
+        if (typeof window.clearSelectedMaterialId === 'function') window.clearSelectedMaterialId(altInput);
     }
 
     const grnInput = row.querySelector('.grn-input');
@@ -1103,7 +1124,7 @@ function onSaleMaterialPicked(code, name, inputId) {
     if (!input) return;
     const row = input.closest('.compact-item-row');
     if (row) {
-        row.dataset.saleMaterial = code || name || '';
+        row.dataset.saleMaterial = name || code || '';
         const grnInput = row.querySelector('.grn-input');
         const grnDisplay = row.querySelector('[id*="GRNDisplay"]');
         if (grnInput) grnInput.value = '';

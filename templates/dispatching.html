@@ -31,10 +31,11 @@
                         <div class="col-md-6">
                             <label class="text-white-50 small fw-bold mb-1">Material Brand</label>
                             <div class="position-relative">
-                                <input type="text" name="material" id="dispatchMaterialSearch" class="form-control bg-dark text-white border-secondary" placeholder="Type brand name..." autocomplete="off" required onfocus="showCombobox('dispatchMaterialSearch', 'dispatchMaterialList')" oninput="filterCombobox('dispatchMaterialSearch', 'dispatchMaterialList', 'dispatchMaterialDisplay')">
+                                <input type="hidden" name="material_id" id="dispatchMaterialId" value="">
+                                <input type="text" name="material" id="dispatchMaterialSearch" class="form-control bg-dark text-white border-secondary" placeholder="Type brand name..." autocomplete="off" required onfocus="showCombobox('dispatchMaterialSearch', 'dispatchMaterialList')" oninput="filterCombobox('dispatchMaterialSearch', 'dispatchMaterialList', 'dispatchMaterialDisplay')" data-material-id-input="dispatchMaterialId">
                                 <div id="dispatchMaterialList" class="combobox-list shadow-lg" style="display: none;">
                                     {% for m in materials %}
-                                    <div class="combobox-item" data-combo-code="{{ m.name }}" data-combo-name="{{ m.name }}" data-combo-input="dispatchMaterialSearch" data-combo-display="dispatchMaterialDisplay">
+                                    <div class="combobox-item" data-material-id="{{ m.id }}" data-combo-code="{{ m.name }}" data-combo-name="{{ m.name }}" data-combo-input="dispatchMaterialSearch" data-combo-display="dispatchMaterialDisplay">
                                         <span class="fw-bold text-warning">{{ m.name }}</span>
                                     </div>
                                     {% endfor %}
@@ -103,6 +104,11 @@
 </div>
 
 <script>
+    window.AMS_KNOWN_MATERIAL_NAMES = new Set([
+        {% for m in materials %}
+        {{ (m.name or '')|tojson }}, {{ (m.name or '')|lower|tojson }},
+        {% endfor %}
+    ]);
     document.getElementById('current_date_dispatch').innerText = new Date().toLocaleDateString('en-US', { 
         month: 'long', day: 'numeric', year: 'numeric' 
     });

@@ -9,62 +9,11 @@ def client_booking_cancel(client_id):
         flash('Client not found', 'danger')
         return redirect(url_for('clients'))
 
-    client_name_norm = (client.name or '').strip().lower()
+    from app.services.booking_cancel_plan import build_client_booking_cancel_plan
 
-    delivered_totals = {}
-    delivered_entries = Entry.query.filter(
-        (Entry.client_code == client.code) | (func.lower(func.trim(Entry.client)) == client_name_norm),
-        Entry.type == 'OUT',
-        Entry.is_void == False,
-        not_(and_(Entry.nimbus_no == 'Direct Sale', Entry.client_category != 'Booking Delivery'))
-    ).all()
-    for e in delivered_entries:
-        key = e.booked_material or e.material
-        delivered_totals[key] = delivered_totals.get(key, 0) + (e.qty or 0)
-
-    booking_items = BookingItem.query.join(Booking).filter(
-        func.lower(func.trim(Booking.client_name)) == client_name_norm,
-        Booking.is_void == False
-    ).all()
-
-    items_by_material = {}
-    for item in booking_items:
-        mat_name = item.material_name or ''
-        items_by_material.setdefault(mat_name, []).append(item)
-
-    cancel_plan = []
-    cancel_total = 0
-    cancel_total_qty = 0
-
-    for mat_name, items in items_by_material.items():
-        # Deliveries consume oldest booking first (FIFO). Remaining leftover
-        # therefore sits on newer lots. Cancel UI still lists leftover newest-first.
-        items.sort(
-            key=lambda x: (
-                x.booking.date_posted or datetime.min,
-                x.booking.id or 0,
-                x.id or 0
-            )
-        )
-        remaining_delivered = float(delivered_totals.get(mat_name, 0) or 0)
-        leftovers = []
-        for item in items:
-            booked_qty = float(item.qty or 0)
-            consumed = min(booked_qty, remaining_delivered) if remaining_delivered > 0 else 0
-            remaining_delivered = max(0, remaining_delivered - consumed)
-            remaining_qty = booked_qty - consumed
-            if remaining_qty > 0:
-                leftovers.append((item, remaining_qty))
-        leftovers.reverse()
-        for item, remaining_qty in leftovers:
-            rate = float(item.price_at_time or 0)
-            amount = remaining_qty * rate
-            cancel_total += amount
-            cancel_total_qty += remaining_qty
-            cancel_plan.append({
-                'item': item,
-                'remaining_qty': remaining_qty
-            })
+    # Shared plan: remaining = booked - delivered + returned_booked, so qty
+    # credited back by a booked material return is cancellable again.
+    cancel_plan, cancel_total, cancel_total_qty = build_client_booking_cancel_plan(client)
 
     if not cancel_plan:
         flash('No remaining booking items to cancel.', 'info')

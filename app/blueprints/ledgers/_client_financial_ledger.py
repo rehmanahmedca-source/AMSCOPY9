@@ -610,78 +610,24 @@ def financial_ledger(client_id):
     total_credit = _money_round(total_credit)
     total_balance = _money_round(total_balance)
 
-    # Cancellation preview for remaining bookings (LIFO by booking date)
-    cancel_rows = []
-    cancel_total = 0
-    cancel_total_qty = 0
-    delivered_totals = {}
+    # Cancellation preview for remaining bookings (LIFO by booking date).
+    # Shared plan: remaining = booked - delivered + returned_booked, so qty
+    # credited back by a booked material return is cancellable again.
+    from app.services.booking_cancel_plan import build_client_booking_cancel_plan
 
-    delivered_entries = Entry.query.filter(
-        (Entry.client_code == client.code) | (func.lower(func.trim(Entry.client)) == client_name_norm),
-        Entry.type == 'OUT',
-        Entry.is_void == False,
-        not_(and_(Entry.nimbus_no == 'Direct Sale', Entry.client_category != 'Booking Delivery'))
-    ).all()
-    for e in delivered_entries:
-        key = e.booked_material or e.material
-        delivered_totals[key] = delivered_totals.get(key, 0) + (e.qty or 0)
-
-    booking_items = BookingItem.query.join(Booking).filter(
-        func.lower(func.trim(Booking.client_name)) == client_name_norm,
-        Booking.is_void == False
-    ).all()
-
-    items_by_material = {}
-    for item in booking_items:
-        mat_name = item.material_name or ''
-        items_by_material.setdefault(mat_name, []).append(item)
-
-    def _fmt_date_short(dt_val):
-        if not dt_val:
-            return ''
-        if isinstance(dt_val, str):
-            return dt_val
-        try:
-            return dt_val.strftime('%Y-%m-%d')
-        except Exception:
-            return str(dt_val)
-
-    for mat_name, items in items_by_material.items():
-        # FIFO consume deliveries against oldest lots; leftover listed newest-first.
-        items.sort(
-            key=lambda x: (
-                x.booking.date_posted or datetime.min,
-                x.booking.id or 0,
-                x.id or 0
-            )
-        )
-        remaining_delivered = float(delivered_totals.get(mat_name, 0) or 0)
-        leftovers = []
-        for item in items:
-            booked_qty = float(item.qty or 0)
-            consumed = min(booked_qty, remaining_delivered) if remaining_delivered > 0 else 0
-            remaining_delivered = max(0, remaining_delivered - consumed)
-            remaining_qty = booked_qty - consumed
-            if remaining_qty > 0:
-                leftovers.append((item, remaining_qty))
-        leftovers.reverse()
-        for item, remaining_qty in leftovers:
-
-            rate = float(item.price_at_time or 0)
-            amount = remaining_qty * rate
-            cancel_total += amount
-            cancel_total_qty += remaining_qty
-
-            booking_ref = item.booking.manual_bill_no or item.booking.auto_bill_no or f"BK-{item.booking.id}"
-            cancel_rows.append({
-                'item_id': item.id,
-                'material': mat_name,
-                'booking_date': _fmt_date_short(item.booking.date_posted),
-                'bill_no': booking_ref,
-                'qty_remaining': remaining_qty,
-                'rate': rate,
-                'amount': amount
-            })
+    plan_rows, cancel_total, cancel_total_qty = build_client_booking_cancel_plan(client)
+    cancel_rows = [
+        {
+            'item_id': row['item_id'],
+            'material': row['material'],
+            'booking_date': row['booking_date'],
+            'bill_no': row['bill_no'],
+            'qty_remaining': row['remaining_qty'],
+            'rate': row['rate'],
+            'amount': row['amount'],
+        }
+        for row in plan_rows
+    ]
 
     cancel_rows.sort(
         key=lambda x: (x.get('material') or '', x.get('booking_date') or ''),

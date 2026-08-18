@@ -259,7 +259,8 @@ def _restore_users_from_excel(xls):
 
 
 def _full_import_report_dir():
-    return current_app.config.get('IMPORT_REPORTS_DIR') or os.path.join(current_app.instance_path, 'import_reports')
+    from app.services.import_artifacts import reports_dir
+    return str(reports_dir())
 
 
 def _write_full_import_report(report, issue_rows, mode, scope_ctx, source_file_name):
@@ -528,21 +529,61 @@ def _run_full_raw_import_bytes(file_bytes, scope_ctx, mode, source_file_name):
     # valid rows and proves the Session is still usable after rejected rows.
     db.session.commit()
 
-    report_name = None
-    try:
-        report_name, report_meta = _write_full_import_report(
-            report, issue_rows, mode, scope_ctx, source_file_name
-        )
-        session['full_raw_import_report'] = report_name
-        session['full_raw_import_report_meta'] = report_meta
-    except Exception as exc:
-        report['warnings'] += 1
-        report['status'] = 'warning' if report['status'] == 'ok' else report['status']
+    from app.services.import_artifacts import (
+        discard_import_artifacts,
+        purge_expired_failed_artifacts,
+        should_discard_artifacts,
+        verify_post_import_integrity,
+    )
+
+    integrity_ok, integrity_reason = verify_post_import_integrity()
+    if not integrity_ok:
+        report['status'] = 'failed'
+        report['failed'] = int(report.get('failed') or 0) + 1
         report['table_results'].append({
-            'name': 'import report file', 'status': 'warning', 'inserted': 0,
-            'updated': 0, 'skipped': 0, 'failed': 0,
-            'error': f'Data imported, but the downloadable report could not be written: {_short_import_error(exc)}',
+            'name': 'post-import integrity', 'status': 'failed', 'inserted': 0,
+            'updated': 0, 'skipped': 0, 'failed': 1,
+            'error': f'Import committed but integrity verification failed: {integrity_reason}',
         })
+
+    report_name = None
+    keep_file = (not should_discard_artifacts(report.get('status'), failed_count=int(report.get('failed') or 0))) or not integrity_ok
+    if keep_file:
+        try:
+            report_name, report_meta = _write_full_import_report(
+                report, issue_rows, mode, scope_ctx, source_file_name
+            )
+            session['full_raw_import_report'] = report_name
+            session['full_raw_import_report_meta'] = report_meta
+        except Exception as exc:
+            report['warnings'] += 1
+            report['status'] = 'warning' if report['status'] == 'ok' else report['status']
+            report['table_results'].append({
+                'name': 'import report file', 'status': 'warning', 'inserted': 0,
+                'updated': 0, 'skipped': 0, 'failed': 0,
+                'error': f'Data imported, but the downloadable report could not be written: {_short_import_error(exc)}',
+            })
+    else:
+        # Success: summary stays in the DB/session payload; files are disposable.
+        session.pop('full_raw_import_report', None)
+        session['full_raw_import_report_meta'] = {
+            'name': None,
+            'created_at': pk_now().strftime('%Y-%m-%d %H:%M:%S'),
+            'mode': mode,
+            'scope': scope_ctx.get('scope'),
+            'inserted': report.get('inserted', 0),
+            'updated': report.get('updated', 0),
+            'skipped': report.get('skipped', 0),
+            'failed': report.get('failed', 0),
+            'warnings': report.get('warnings', 0),
+            'tables': report.get('tables', 0),
+            'status': report.get('status'),
+            'source_file': source_file_name,
+            'issue_rows_count': 0,
+            'persisted_file': False,
+        }
+        discard_import_artifacts()
+    purge_expired_failed_artifacts()
     return report, report_name
 
 

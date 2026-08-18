@@ -14,7 +14,8 @@ def reconcile_data():
         db.session.commit()
         if apply_fixes and report.get('bill_normalized_count', 0) > 0:
             try:
-                reports_dir = os.path.join(basedir, 'instance', 'import_reports')
+                from app.services.import_artifacts import reports_dir as _import_reports_dir
+                reports_dir = str(_import_reports_dir())
                 os.makedirs(reports_dir, exist_ok=True)
                 ts = pk_now().strftime('%Y%m%d_%H%M%S')
                 path = os.path.join(reports_dir, f"bill_normalization_audit_{ts}.md")

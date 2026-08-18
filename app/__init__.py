@@ -28,7 +28,9 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     instance_dir = root / "instance"
     instance_dir.mkdir(parents=True, exist_ok=True)
-    (instance_dir / "import_uploads").mkdir(parents=True, exist_ok=True)
+    tmp_dir = instance_dir / ".tmp"
+    (tmp_dir / "import_uploads").mkdir(parents=True, exist_ok=True)
+    (tmp_dir / "import_reports").mkdir(parents=True, exist_ok=True)
 
     db_path = os.environ.get("APP_DB_PATH") or str(instance_dir / "ahmed_cement.db")
     # SQLite creates the database file on first connection, but it does not
@@ -82,8 +84,12 @@ def create_app(test_config: dict | None = None) -> Flask:
         REMEMBER_COOKIE_SECURE=cookie_secure,
         PREFERRED_URL_SCHEME="https" if cookie_secure else "http",
         FULL_RAW_IMPORT_ENABLED="1",
-        IMPORT_UPLOADS_DIR=str(instance_dir / "import_uploads"),
-        IMPORT_REPORTS_DIR=str(instance_dir / "import_reports"),
+        IMPORT_TMP_DIR=str(tmp_dir),
+        IMPORT_UPLOADS_DIR=str(tmp_dir / "import_uploads"),
+        IMPORT_REPORTS_DIR=str(tmp_dir / "import_reports"),
+        IMPORT_ARTIFACT_RETENTION_SECONDS=int(
+            os.environ.get("IMPORT_ARTIFACT_RETENTION_SECONDS", str(7 * 24 * 3600)) or "0"
+        ),
         UPLOAD_DIR=os.environ.get("UPLOAD_DIR", str(root / "static" / "uploads")),
         BACKUP_DIR=os.environ.get("BACKUP_DIR", str(instance_dir / "storage" / "backups")),
         MAINTENANCE_TEMP_DIR=os.environ.get("MAINTENANCE_TEMP_DIR", str(instance_dir / "storage" / "temp")),

@@ -74,10 +74,9 @@ def _actor_name() -> str:
 
 
 def _uploads_dir() -> Path:
-    raw = current_app.config.get("IMPORT_UPLOADS_DIR")
-    path = Path(raw) if raw else Path(current_app.instance_path) / "import_uploads"
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+    from app.services.import_artifacts import uploads_dir
+
+    return uploads_dir()
 
 
 def _upload_to_dict(up: ImportUpload) -> dict:
@@ -210,6 +209,33 @@ def register_import_job_routes(app):
             job.finished_at = pk_model_now()
             create_history_entry(job.id, "FAILED", str(exc))
         db.session.commit()
+        from app.services.import_artifacts import (
+            discard_import_artifacts,
+            purge_expired_failed_artifacts,
+            should_discard_artifacts,
+            verify_post_import_integrity,
+        )
+
+        # Never delete the upload until the import transaction committed and
+        # the database still looks healthy. Failed jobs keep the file for diagnosis.
+        dest = _uploads_dir() / rec.stored_filename
+        ok, _reason = verify_post_import_integrity()
+        failed_count = 0
+        if isinstance(job.import_stats, dict):
+            failed_count = int(job.import_stats.get("failed") or job.import_stats.get("errors") or 0)
+            detail = job.import_stats.get("detail") if isinstance(job.import_stats.get("detail"), dict) else {}
+            failed_count = max(
+                failed_count,
+                int((detail or {}).get("failed") or (detail or {}).get("errors") or 0),
+            )
+        if (
+            ok
+            and job.status == "completed"
+            and rec.status == "imported"
+            and should_discard_artifacts(job.status, failed_count=failed_count)
+        ):
+            discard_import_artifacts(dest)
+        purge_expired_failed_artifacts()
         return jsonify({"success": True, "job_id": job.id, "status": job.status, "import_stats": job.import_stats})
 
     @app.get("/import_export/jobs/<int:job_id>/progress")

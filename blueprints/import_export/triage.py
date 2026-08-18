@@ -92,7 +92,8 @@ def full_raw_import_report(report_name):
 
 
 def _get_full_raw_report_dir():
-    return current_app.config.get('IMPORT_REPORTS_DIR') or os.path.join(current_app.instance_path, 'import_reports')
+    from app.services.import_artifacts import reports_dir
+    return str(reports_dir())
 
 
 def _list_full_raw_reports():

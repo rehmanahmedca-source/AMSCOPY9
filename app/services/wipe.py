@@ -277,25 +277,16 @@ def verify_accounts_domain_wipe_integrity(session=None):
 
 
 def _create_pre_wipe_tenant_backup(tenant):
-    """Create tenant-scoped snapshot before destructive wipe and return (filename, path)."""
-    from blueprints.import_export import _build_full_raw_export_bytes
+    """Automatic pre-wipe file backups are disabled.
 
-    scope_ctx = {
-        'scope': 'tenant',
-        'target_tenant_id': tenant.id,
-        'target_tenant_name': tenant.name,
-        'role': 'root',
-    }
-    content = _build_full_raw_export_bytes(scope_ctx=scope_ctx)
-    stamp = pk_now().strftime('%Y%m%d_%H%M%S')
-    safe_tenant = re.sub(r'[^A-Za-z0-9_.-]+', '_', (tenant.name or 'tenant')).strip('._') or 'tenant'
-    filename = f"pre_wipe_{safe_tenant}_{tenant.id}_{stamp}.xlsx"
-    backup_dir = os.path.join(basedir, 'instance', 'root_tenant_wipe_backups', tenant.id)
-    os.makedirs(backup_dir, exist_ok=True)
-    backup_path = os.path.join(backup_dir, filename)
-    with open(backup_path, 'wb') as f:
-        f.write(content or b'')
-    return filename, backup_path
+    Operators keep their own backup process. The application must not silently
+    write another copy of the database or a tenant export under instance/.
+    """
+    logging.getLogger('wipe').info(
+        'Skipping automatic pre-wipe tenant backup for tenant_id=%s',
+        getattr(tenant, 'id', None),
+    )
+    return None, None
 
 
 def _enforce_tenant_wipe_backup_retention(tenant_id, keep=3):
@@ -387,40 +378,24 @@ def _wipe_preview_for_targets(targets):
 
 
 def _create_pre_wipe_safety_backups(targets):
-    stamp = pk_now().strftime('%Y%m%d_%H%M%S')
-    backup_dir = os.path.join(legacy_instance_dir, 'pre_wipe_backups', stamp)
-    os.makedirs(backup_dir, exist_ok=True)
-    safe_stamp = re.sub(r'[^0-9A-Za-z_-]+', '_', stamp)
-    backup_info = {
+    """No-op: do not copy the live database into instance/pre_wipe_backups/.
+
+    External/operator backups are the source of truth. Returning an empty
+    backup_info keeps wipe callers working without writing files.
+    """
+    logging.getLogger('wipe').info(
+        'Skipping automatic pre-wipe safety backup for datasets=%s',
+        sorted(set(targets or [])),
+    )
+    return {
         'timestamp': pk_now().strftime('%Y-%m-%d %H:%M:%S'),
         'datasets': sorted(set(targets or [])),
-        'backup_dir': backup_dir,
+        'backup_dir': None,
         'db_backup_path': None,
-        'health_snapshot_backup_path': None
+        'health_snapshot_backup_path': None,
+        'skipped': True,
+        'reason': 'automatic_pre_wipe_backups_disabled',
     }
-
-    if os.path.exists(db_path):
-        db_backup_path = os.path.join(backup_dir, f'pre_wipe_db_{safe_stamp}.db')
-        try:
-            src = sqlite3.connect(db_path)
-            dst = sqlite3.connect(db_backup_path)
-            try:
-                src.backup(dst)
-            finally:
-                dst.close()
-                src.close()
-        except Exception:
-            shutil.copy2(db_path, db_backup_path)
-        backup_info['db_backup_path'] = db_backup_path
-
-    health_backup_path = os.path.join(backup_dir, f'pre_wipe_health_snapshot_{safe_stamp}.json')
-    if os.path.exists(_DB_HEALTH_SNAPSHOT_PATH):
-        shutil.copy2(_DB_HEALTH_SNAPSHOT_PATH, health_backup_path)
-    else:
-        with open(health_backup_path, 'w', encoding='utf-8') as f:
-            json.dump({'missing': True, 'path': _DB_HEALTH_SNAPSHOT_PATH, 'captured_at': backup_info['timestamp']}, f, indent=2, sort_keys=True)
-    backup_info['health_snapshot_backup_path'] = health_backup_path
-    return backup_info
 
 
 def _complete_intentional_wipe_workflow(targets, deleted_info, backup_info, mode):

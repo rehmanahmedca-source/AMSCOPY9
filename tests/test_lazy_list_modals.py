@@ -105,6 +105,22 @@ def test_list_pages_exclude_per_row_modals_and_lazy_endpoints_render_one(app_wit
         assert b'name="csrf_token"' in response.data
 
 
+def test_direct_sales_client_filter_accepts_combobox_code(app_with_sales_rows):
+    """Selecting a client code must find sales stored under its client name."""
+    application, _ids = app_with_sales_rows
+    http = application.test_client()
+    _login_admin(http)
+
+    by_code = http.get("/direct_sales?client=LAZY-1")
+    assert by_code.status_code == 200
+    assert b"LAZY-DS-1" in by_code.data
+
+    # Free-text fallback searches both client names and partial client codes.
+    by_partial_code = http.get("/direct_sales?client=LAZY")
+    assert by_partial_code.status_code == 200
+    assert b"LAZY-DS-1" in by_partial_code.data
+
+
 def test_lazy_modal_endpoints_require_authentication(app_with_sales_rows):
     application, ids = app_with_sales_rows
     http = application.test_client()

@@ -1,8 +1,10 @@
 """bookings — split from sales.py."""
+from sqlalchemy.exc import IntegrityError
+
 from ._common import *  # noqa
 
 
-def _sync_booking_paid_into_account(booking, *, payment_account_id, method='Cash'):
+def _sync_booking_paid_into_account(booking, *, payment_account_id, method='Cash', require_account=True):
     """Post Paid Now into the chosen cash/bank account without a second client Payment row."""
     paid = float(booking.paid_amount or 0)
     method = (method or 'Cash').strip() or 'Cash'
@@ -12,13 +14,19 @@ def _sync_booking_paid_into_account(booking, *, payment_account_id, method='Cash
     except (TypeError, ValueError):
         acc_id = None
     acc = Account.query.get(acc_id) if acc_id else None
-    booking.receive_in_account_id = acc.id if acc and paid > 0 else None
     if paid > 0:
         if not acc or not getattr(acc, 'is_active', True):
-            raise ValueError('Select the cash/bank account that should receive Paid Now.')
+            if require_account:
+                raise ValueError('Select the cash/bank account that should receive Paid Now.')
+            # Legacy bookings often have Paid Now with no receive-into account.
+            # Leave any existing receipt / account link untouched.
+            return None
         acc_cat = (acc.category or '').strip().lower()
         if acc_cat and acc_cat != expected:
             raise ValueError(f'Selected account must be a {expected} account for method "{method}".')
+        booking.receive_in_account_id = acc.id
+    else:
+        booking.receive_in_account_id = None
     bill = booking.manual_bill_no or booking.auto_bill_no or f'BK-{booking.id}'
     marker = f'[SRC:Booking:{booking.id}]'
     note = ' '.join(x for x in [(booking.note or '').strip(), f'Method: {method}', marker] if x).strip()
@@ -33,6 +41,105 @@ def _sync_booking_paid_into_account(booking, *, payment_account_id, method='Cash
         is_void=bool(getattr(booking, 'is_void', False)) or paid <= 0,
     )
     return acc
+
+
+def _collect_booking_item_updates(materials_list, qtys, rates, item_ids=None):
+    """Normalize submitted booking lines and auto-create missing materials."""
+    rows = []
+    for mat, qty, rate, item_id in zip_longest(
+        materials_list or [], qtys or [], rates or [], item_ids or [], fillvalue=''
+    ):
+        mat_name = str(mat or '').strip()
+        qty_val = _to_float_or_zero(qty)
+        rate_val = _to_float_or_zero(rate)
+        if qty_val <= 0 and not mat_name:
+            continue
+        if qty_val > 0 and rate_val <= 0:
+            raise ValueError(f'Unit rate is required and must be greater than 0 for "{mat_name}".')
+        if not mat_name:
+            continue
+        mat_obj = get_material_by_input(mat)
+        if not mat_obj:
+            mat_obj = Material(
+                code=generate_material_code(),
+                name=mat_name,
+                unit_price=rate_val,
+                category_id=_get_default_material_category_id()
+            )
+            db.session.add(mat_obj)
+            db.session.flush()
+        try:
+            keep_id = int(item_id) if str(item_id or '').strip() else None
+        except (TypeError, ValueError):
+            keep_id = None
+        rows.append((keep_id, mat_obj.name, qty_val, rate_val))
+    return rows
+
+
+def _apply_booking_item_updates(booking, desired_rows):
+    """Update booking lines in place so delivered allocations keep their FKs.
+
+    The previous delete-all/recreate path crashed with IntegrityError (HTTP 500)
+    as soon as any BookingAllocation still pointed at a BookingItem.
+    """
+    existing = list(
+        BookingItem.query.filter_by(booking_id=booking.id).order_by(BookingItem.id.asc()).all()
+    )
+    allocated = _booking_allocated_qty_map([it.id for it in existing])
+    linked_ids = set()
+    if existing:
+        linked_ids = {
+            row[0]
+            for row in db.session.query(BookingAllocation.booking_item_id)
+            .filter(BookingAllocation.booking_item_id.in_([it.id for it in existing]))
+            .distinct()
+            .all()
+            if row[0]
+        }
+
+    unused = {it.id: it for it in existing}
+    for keep_id, mat_name, qty_val, rate_val in desired_rows:
+        item = None
+        if keep_id and keep_id in unused:
+            item = unused.pop(keep_id)
+        else:
+            match_id = next(
+                (eid for eid, it in unused.items() if (it.material_name or '').strip() == mat_name),
+                None,
+            )
+            if match_id is not None:
+                item = unused.pop(match_id)
+
+        if item is None:
+            db.session.add(BookingItem(
+                booking_id=booking.id,
+                material_name=mat_name,
+                qty=qty_val,
+                price_at_time=rate_val,
+            ))
+            continue
+
+        used_qty = float(allocated.get(item.id, 0) or 0)
+        if qty_val + 1e-6 < used_qty:
+            raise ValueError(
+                f'Cannot reduce "{mat_name}" below the already delivered quantity {used_qty:g}.'
+            )
+        if item.id in linked_ids and (item.material_name or '').strip() != mat_name:
+            raise ValueError(
+                f'Cannot change "{item.material_name}" to "{mat_name}" because that line has already been delivered.'
+            )
+        item.material_name = mat_name
+        item.qty = qty_val
+        item.price_at_time = rate_val
+
+    for item in unused.values():
+        if item.id in linked_ids or float(allocated.get(item.id, 0) or 0) > 0:
+            raise ValueError(
+                f'Cannot remove "{item.material_name}" because it has already been delivered. '
+                'Void or correct that sale first.'
+            )
+        db.session.delete(item)
+    db.session.flush()
 
 
 @bp.route('/bookings')
@@ -112,7 +219,8 @@ def booking_edit_modal(booking_id):
         .first_or_404()
     )
     clients = Client.query.filter_by(is_active=True).order_by(Client.name.asc()).all()
-    return render_template('_booking_edit_modal.html', booking=booking, clients=clients)
+    accounts = Account.query.filter(func.coalesce(Account.is_active, True) == True).order_by(Account.name.asc()).all()
+    return render_template('_booking_edit_modal.html', booking=booking, clients=clients, accounts=accounts)
 
 
 @bp.route('/add_booking', methods=['POST'])
@@ -242,6 +350,8 @@ def edit_booking(id):
     booking = Booking.query.get_or_404(id)
 
     old_bill_no = booking.manual_bill_no
+    old_paid = float(booking.paid_amount or 0)
+    old_account_id = booking.receive_in_account_id
     old_client = Client.query.filter_by(name=booking.client_name).first()
     old_client_code = old_client.code if old_client else None
 
@@ -256,6 +366,7 @@ def edit_booking(id):
     materials_list = request.form.getlist('material_name[]')
     qtys = request.form.getlist('qty[]')
     rates = request.form.getlist('unit_rate[]')
+    item_ids = request.form.getlist('booking_item_id[]')
     booking.amount = _to_float_or_zero(request.form.get('amount', 0))
     booking.paid_amount = _to_float_or_zero(request.form.get('paid_amount', 0))
     try:
@@ -265,7 +376,10 @@ def edit_booking(id):
             label='Booking discount',
             require_reason=False
         )
+        desired_rows = _collect_booking_item_updates(materials_list, qtys, rates, item_ids)
+        _apply_booking_item_updates(booking, desired_rows)
     except ValueError as ve:
+        db.session.rollback()
         flash(str(ve), 'danger')
         return redirect(url_for('bookings_page'))
     new_manual_raw = request.form.get('manual_bill_no', '').strip()
@@ -291,33 +405,9 @@ def edit_booking(id):
     if booking.manual_bill_no:
         conflict = find_bill_conflict(booking.manual_bill_no)
         if conflict and not (conflict[0] == 'Booking' and conflict[1] == booking.id):
+            db.session.rollback()
             flash(f"Manual bill '{booking.manual_bill_no}' already exists in {conflict[0]} #{conflict[1]}.", 'danger')
             return redirect(url_for('bookings_page'))
-
-    # Update booking items
-    BookingItem.query.filter_by(booking_id=id).delete()
-
-    for mat, qty, rate in zip(materials_list, qtys, rates):
-        mat_obj = get_material_by_input(mat)
-        mat_name = str(mat or '').strip()
-        if _to_float_or_zero(qty) > 0 and _to_float_or_zero(rate) <= 0:
-            flash(f'Unit rate is required and must be greater than 0 for "{mat_name}".', 'danger')
-            return redirect(url_for('bookings_page'))
-        if not mat_obj and mat_name:
-            mat_obj = Material(
-                code=generate_material_code(),
-                name=mat_name,
-                unit_price=_to_float_or_zero(rate),
-                category_id=_get_default_material_category_id()
-            )
-            db.session.add(mat_obj)
-            db.session.flush()
-        if mat_obj:
-            db.session.add(
-                BookingItem(booking_id=booking.id,
-                            material_name=mat_obj.name,
-                            qty=_to_float_or_zero(qty),
-                            price_at_time=_to_float_or_zero(rate)))
 
     new_client = Client.query.filter_by(name=booking.client_name).first()
     new_client_code = new_client.code if new_client else None
@@ -329,18 +419,33 @@ def edit_booking(id):
         extra_void_refs=[old_bill_ref]
     )
 
+    form_account = (
+        request.form.get('payment_account_id')
+        or request.form.get('receive_in_account_id')
+        or old_account_id
+    )
+    paid_increased = float(booking.paid_amount or 0) > old_paid + 0.0001
     try:
         _sync_booking_paid_into_account(
             booking,
-            payment_account_id=(request.form.get('payment_account_id') or request.form.get('receive_in_account_id')),
+            payment_account_id=form_account,
             method=request.form.get('payment_method') or request.form.get('method') or 'Cash',
+            require_account=bool(form_account) or paid_increased,
         )
+        db.session.commit()
     except ValueError as ve:
         db.session.rollback()
         flash(str(ve), 'danger')
         return redirect(url_for('bookings_page'))
+    except IntegrityError:
+        db.session.rollback()
+        flash(
+            'Booking could not be saved because a delivered line is still linked to this bill. '
+            'Change the discount or unused items only, or void the related sale first.',
+            'danger',
+        )
+        return redirect(url_for('bookings_page'))
 
-    db.session.commit()
     flash('Booking updated', 'success')
 
     bill_ref = booking.manual_bill_no or booking.auto_bill_no or f"BK-{id}"

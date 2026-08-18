@@ -35,6 +35,7 @@
                 <div class="items-container-edit">
                     {% for item in booking.items %}
                     <div class="compact-item-row mb-3 p-2 rounded border border-secondary bg-dark">
+                        <input type="hidden" name="booking_item_id[]" value="{{ item.id }}">
                         <div class="booking-item-grid">
                             <div class="position-relative">
                                 <input type="text" name="material_name[]" class="form-control form-control-sm bg-dark text-white border-secondary price-trigger" value="{{ item.material_name }}" placeholder="Search material..." autocomplete="off" required>
@@ -71,6 +72,25 @@
                     <div class="col-6 mb-3">
                         <label class="text-white-50 small fw-bold mb-1">PAID AMOUNT</label>
                         <input type="number" step="0.01" name="paid_amount" class="form-control bg-dark text-white border-secondary" value="{{ booking.paid_amount }}">
+                    </div>
+                </div>
+                <div class="row booking-account-row">
+                    <div class="col-6 mb-3">
+                        <label class="text-white-50 small fw-bold mb-1">RECEIVE METHOD</label>
+                        <select name="payment_method" class="form-select bg-dark text-white border-secondary booking-pay-method">
+                            <option value="Cash" selected>Cash</option>
+                            <option value="Bank">Bank</option>
+                        </select>
+                    </div>
+                    <div class="col-6 mb-3">
+                        <label class="text-white-50 small fw-bold mb-1">RECEIVE INTO ACCOUNT</label>
+                        <select name="payment_account_id" class="form-select bg-dark text-white border-secondary booking-pay-account">
+                            <option value="">Keep existing / none</option>
+                            {% for account in accounts or [] %}
+                            <option value="{{ account.id }}" data-cat="{{ account.category or '' }}" {% if booking.receive_in_account_id == account.id %}selected{% endif %}>{{ account.name }}{% if account.bank_name %} ({{ account.bank_name }}){% endif %}</option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-white-50">Needed only when increasing Paid Amount.</small>
                     </div>
                 </div>
                 <div class="mb-3">

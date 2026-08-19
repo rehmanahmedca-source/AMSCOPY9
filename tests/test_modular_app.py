@@ -113,7 +113,7 @@ def test_cash_reconciliation_helpers(app):
 
     with app.app_context():
         rec = create_reconciliation(date(2026, 8, 1), 70000, 50000, reason="test", created_by="tester")
-        assert rec.difference == 20000
+        assert rec.difference == -20000
         assert rec.physical_cash_available == 50000
         assert rec.get_opening_for_next_day(70000) == 50000
 

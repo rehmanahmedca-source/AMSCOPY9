@@ -685,6 +685,114 @@ def rename_cf_subcategory(subcategory_id, name, notes=None):
     return sub
 
 
+def cf_used_category_ids():
+    rows = db.session.query(CashFlowEntry.category_id).filter(
+        CashFlowEntry.category_id.isnot(None)
+    ).distinct().all()
+    return {row[0] for row in rows}
+
+
+def cf_used_subcategory_ids():
+    rows = db.session.query(CashFlowEntry.subcategory_id).filter(
+        CashFlowEntry.subcategory_id.isnot(None)
+    ).distinct().all()
+    return {row[0] for row in rows}
+
+
+def cf_used_party_ids():
+    rows = db.session.query(CashFlowEntry.party_id).filter(
+        CashFlowEntry.party_id.isnot(None)
+    ).distinct().all()
+    return {row[0] for row in rows}
+
+
+def _cf_category_is_used(category_id):
+    if CashFlowEntry.query.filter(CashFlowEntry.category_id == category_id).first():
+        return True
+    sub_ids = [
+        row[0] for row in db.session.query(CashFlowSubcategory.id).filter(
+            CashFlowSubcategory.category_id == category_id
+        ).all()
+    ]
+    if sub_ids and CashFlowEntry.query.filter(CashFlowEntry.subcategory_id.in_(sub_ids)).first():
+        return True
+    return False
+
+
+def delete_cf_category(category_id):
+    """Hard-delete an unused category. Historically used categories must be disabled."""
+    cat = db.session.get(CashFlowCategory, category_id)
+    if not cat:
+        raise ValueError('Category not found.')
+    if _cf_category_is_used(cat.id):
+        raise ValueError(
+            'This category is used by historical transactions and cannot be deleted. Disable it instead.'
+        )
+    CashFlowSubcategory.query.filter(CashFlowSubcategory.category_id == cat.id).delete(
+        synchronize_session=False
+    )
+    db.session.delete(cat)
+    db.session.flush()
+    return True
+
+
+def delete_cf_subcategory(subcategory_id):
+    """Hard-delete an unused sub-category. Historically used ones must be disabled."""
+    sub = db.session.get(CashFlowSubcategory, subcategory_id)
+    if not sub:
+        raise ValueError('Sub-category not found.')
+    if CashFlowEntry.query.filter(CashFlowEntry.subcategory_id == sub.id).first():
+        raise ValueError(
+            'This sub-category is used by historical transactions and cannot be deleted. Disable it instead.'
+        )
+    db.session.delete(sub)
+    db.session.flush()
+    return True
+
+
+def delete_cf_party(party_id):
+    """Hard-delete an unused party. Historically used parties must be disabled."""
+    party = db.session.get(CashFlowParty, party_id)
+    if not party:
+        raise ValueError('Party not found.')
+    if CashFlowEntry.query.filter(CashFlowEntry.party_id == party.id).first():
+        raise ValueError(
+            'This party is used by historical transactions and cannot be deleted. Disable it instead.'
+        )
+    db.session.delete(party)
+    db.session.flush()
+    return True
+
+
+def parse_physical_cash_amount(raw):
+    """Parse Physical Cash Available.
+
+    Zero is valid. Empty / missing is invalid. Invalid text is rejected.
+    Do not treat 0 as missing.
+    """
+    if raw is None:
+        raise ValueError('Physical Cash Available is required. Difference is calculated by the system.')
+    text = str(raw).strip().replace(',', '')
+    for prefix in ('Rs.', 'rs.', 'RS.', 'PKR', 'pkr'):
+        if text.startswith(prefix):
+            text = text[len(prefix):].strip()
+    if text == '':
+        raise ValueError('Physical Cash Available is required. Difference is calculated by the system.')
+    try:
+        amount = Decimal(text)
+    except Exception:
+        raise ValueError('Physical Cash Available must be a valid number.')
+    amount = amount.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    if amount == Decimal('-0.00'):
+        amount = Decimal('0.00')
+    return float(amount)
+
+
+def compute_physical_cash_difference(physical_cash, calculated_closing):
+    """Difference = Physical Cash Available - System Calculated Closing."""
+    return _money_round(physical_cash) - _money_round(calculated_closing)
+
+
 def _cf_resolve_category(direction, category_id, category_name, *, required, create_if_missing):
     if direction == CF_DIR_TRANSFER:
         return None

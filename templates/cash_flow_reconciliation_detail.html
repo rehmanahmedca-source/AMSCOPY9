@@ -60,7 +60,7 @@
             </div>
             <div class="row mb-2 border-top pt-2">
               <div class="col-6">Difference:</div>
-              <div class="col-6 text-end"><strong style="color:{{ '#dc2626' if reconciliation.difference > 0 else '#16a34a' }};">Rs. {{ "{:,.0f}".format(reconciliation.difference) }}</strong></div>
+              <div class="col-6 text-end"><strong style="color:{{ '#dc2626' if reconciliation.difference < 0 else '#16a34a' }};">Rs. {{ "{:,.0f}".format(reconciliation.difference) }}</strong></div>
             </div>
           </div>
           <p class="mt-2"><small class="text-muted">Next day opening = Physical Cash = Rs. {{ "{:,.0f}".format(reconciliation.physical_cash_available) }}</small></p>

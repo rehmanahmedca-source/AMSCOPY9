@@ -239,7 +239,7 @@
         </div>
         <div class="col-md-2">
           <label class="ui-label">Date &amp; time</label>
-          <input type="datetime-local" name="movement_date" id="cfDate" class="form-control form-control-sm">
+          <input type="datetime-local" name="movement_date" id="cfDate" class="form-control form-control-sm" value="{{ default_movement_datetime or '' }}">
         </div>
 
         <div class="col-md-3 cf-field-cat position-relative">
@@ -300,7 +300,7 @@
   <div class="ui-card mb-4 d-print-none">
     <div class="ui-card-header">
       <h5 class="mb-0">Master data CRUD</h5>
-      <small class="text-muted">Create, view, edit, disable and restore every Cash Flow list. Disable keeps history readable.</small>
+      <small class="text-muted">Create, view, edit, disable, restore and delete every Cash Flow list. Delete is allowed only when unused. Disable keeps history readable.</small>
     </div>
     <div class="ui-card-body">
       <div class="row g-3 mb-3">
@@ -378,12 +378,17 @@
                   </div>
                   <div class="col-md-3"><input type="text" name="category_notes" class="form-control form-control-sm" value="{{ c.notes or '' }}" placeholder="Notes"></div>
                   <div class="col-md-1">{% if c.is_active %}<span class="badge bg-success">Active</span>{% else %}<span class="badge bg-secondary">Disabled</span>{% endif %}</div>
-                  <div class="col-md-3 d-flex gap-1">
+                  <div class="col-md-3 d-flex gap-1 flex-wrap">
                     <button class="btn btn-sm btn-outline-secondary" name="action" value="rename_category" type="submit">Save</button>
                     {% if c.is_active %}
-                    <button class="btn btn-sm btn-outline-danger" name="action" value="disable_category" type="submit">Disable</button>
+                    <button class="btn btn-sm btn-outline-warning" name="action" value="disable_category" type="submit">Disable</button>
                     {% else %}
-                    <button class="btn btn-sm btn-outline-success" name="action" value="enable_category" type="submit">Enable</button>
+                    <button class="btn btn-sm btn-outline-success" name="action" value="enable_category" type="submit">Restore</button>
+                    {% endif %}
+                    {% if c.id in (used_category_ids or []) %}
+                    <button type="button" class="btn btn-sm btn-outline-secondary" disabled title="Used by historical transactions. Disable instead of deleting.">Delete</button>
+                    {% else %}
+                    <button class="btn btn-sm btn-outline-danger" name="action" value="delete_category" type="submit" onclick="return confirm('Permanently delete this unused category?');">Delete</button>
                     {% endif %}
                   </div>
                 </form>
@@ -411,12 +416,17 @@
                   <div class="col-md-3"><input type="text" name="subcategory_name" class="form-control form-control-sm" value="{{ s.name }}" required></div>
                   <div class="col-md-4"><input type="text" name="subcategory_notes" class="form-control form-control-sm" value="{{ s.notes or '' }}" placeholder="Notes"></div>
                   <div class="col-md-2">{% if s.is_active %}<span class="badge bg-success">Active</span>{% else %}<span class="badge bg-secondary">Disabled</span>{% endif %}</div>
-                  <div class="col-md-3 d-flex gap-1">
+                  <div class="col-md-3 d-flex gap-1 flex-wrap">
                     <button class="btn btn-sm btn-outline-secondary" name="action" value="rename_subcategory" type="submit">Save</button>
                     {% if s.is_active %}
-                    <button class="btn btn-sm btn-outline-danger" name="action" value="disable_subcategory" type="submit">Disable</button>
+                    <button class="btn btn-sm btn-outline-warning" name="action" value="disable_subcategory" type="submit">Disable</button>
                     {% else %}
-                    <button class="btn btn-sm btn-outline-success" name="action" value="enable_subcategory" type="submit">Enable</button>
+                    <button class="btn btn-sm btn-outline-success" name="action" value="enable_subcategory" type="submit">Restore</button>
+                    {% endif %}
+                    {% if s.id in (used_subcategory_ids or []) %}
+                    <button type="button" class="btn btn-sm btn-outline-secondary" disabled title="Used by historical transactions. Disable instead of deleting.">Delete</button>
+                    {% else %}
+                    <button class="btn btn-sm btn-outline-danger" name="action" value="delete_subcategory" type="submit" onclick="return confirm('Permanently delete this unused sub-category?');">Delete</button>
                     {% endif %}
                   </div>
                 </form>
@@ -450,12 +460,17 @@
                   </div>
                   <div class="col-md-3"><input type="text" name="party_note" class="form-control form-control-sm" value="{{ p.note or '' }}" placeholder="Notes"></div>
                   <div class="col-md-1">{% if p.is_active %}<span class="badge bg-success">Active</span>{% else %}<span class="badge bg-secondary">Disabled</span>{% endif %}</div>
-                  <div class="col-md-3 d-flex gap-1">
+                  <div class="col-md-3 d-flex gap-1 flex-wrap">
                     <button class="btn btn-sm btn-outline-secondary" name="action" value="update_party" type="submit">Save</button>
                     {% if p.is_active %}
-                    <button class="btn btn-sm btn-outline-danger" name="action" value="disable_party" type="submit">Disable</button>
+                    <button class="btn btn-sm btn-outline-warning" name="action" value="disable_party" type="submit">Disable</button>
                     {% else %}
-                    <button class="btn btn-sm btn-outline-success" name="action" value="enable_party" type="submit">Enable</button>
+                    <button class="btn btn-sm btn-outline-success" name="action" value="enable_party" type="submit">Restore</button>
+                    {% endif %}
+                    {% if p.id in (used_party_ids or []) %}
+                    <button type="button" class="btn btn-sm btn-outline-secondary" disabled title="Used by historical transactions. Disable instead of deleting.">Delete</button>
+                    {% else %}
+                    <button class="btn btn-sm btn-outline-danger" name="action" value="delete_party" type="submit" onclick="return confirm('Permanently delete this unused party?');">Delete</button>
                     {% endif %}
                   </div>
                 </form>
@@ -632,7 +647,8 @@
       <small class="text-muted ms-2">Optional end-of-day check.</small>
     </summary>
     <div class="ui-card-body">
-      <form method="POST" action="{{ url_for('cash_flow') }}" class="row g-3 align-items-end">
+      <form method="POST" action="{{ url_for('cash_flow') }}" class="row g-3 align-items-end" id="cfReconcileForm">
+        <input type="hidden" name="action" value="save_reconciliation">
         <input type="hidden" name="from_date" value="{{ from_date }}">
         <input type="hidden" name="to_date" value="{{ to_date }}">
         <input type="hidden" name="filter_type" value="{{ filter_type }}">
@@ -787,13 +803,13 @@
               {% if r.entry_id and r.source == 'MANUAL' %}
                 {% if r.status != 'voided' %}
                 <button type="button" class="btn btn-sm btn-outline-primary cf-edit-btn" data-entry-id="{{ r.entry_id }}">Edit</button>
-                <form method="POST" class="d-inline" onsubmit="return confirm('Void this transaction and reverse the account effect?');">
+                <form method="POST" class="d-inline" onsubmit="return confirm('Delete/void this transaction and reverse the account effect? History is kept.');">
                   <input type="hidden" name="action" value="void_entry">
                   <input type="hidden" name="entry_id" value="{{ r.entry_id }}">
                   <input type="hidden" name="from_date" value="{{ from_date }}">
                   <input type="hidden" name="to_date" value="{{ to_date }}">
                   <input type="text" name="void_reason" class="form-control form-control-sm d-inline-block" style="width:110px;" placeholder="Reason">
-                  <button class="btn btn-sm btn-outline-danger" type="submit">Void</button>
+                  <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
                 </form>
                 {% else %}
                 <form method="POST" class="d-inline">
@@ -1023,6 +1039,12 @@
     saveBtn.disabled = true;
   });
 
+  const dateEl = document.getElementById('cfDate');
+  const defaultMovementDate = {{ (default_movement_datetime or '')|tojson }};
+  if (dateEl && !dateEl.value && defaultMovementDate) {
+    dateEl.value = defaultMovementDate;
+  }
+
   function resetEdit() {
     document.getElementById('cfFormAction').value = 'record_movement';
     document.getElementById('cfEntryId').value = '';
@@ -1030,6 +1052,7 @@
     document.querySelectorAll('.cf-edit-reason').forEach(function (el) { el.classList.add('d-none'); });
     form.reset();
     keyEl.value = uuid();
+    if (dateEl && defaultMovementDate) dateEl.value = defaultMovementDate;
     syncType();
   }
   const cancelBtn = document.getElementById('cfCancelEdit');
@@ -1071,11 +1094,22 @@
   const physical = document.getElementById('physical_cash_input');
   if (physical) {
     physical.addEventListener('input', function () {
-      const value = parseFloat(this.value) || 0;
-      const calculated = {{ closing_balance }};
-      const difference = calculated - value;
+      const raw = String(this.value || '').trim();
       const display = document.getElementById('difference_display');
-      const color = difference > 0 ? '#dc2626' : (difference < 0 ? '#16a34a' : '#6b7280');
+      if (raw === '') {
+        display.textContent = 'Rs. 0';
+        display.style.color = '#6b7280';
+        return;
+      }
+      const value = parseFloat(raw);
+      if (Number.isNaN(value)) {
+        display.textContent = 'Invalid';
+        display.style.color = '#dc2626';
+        return;
+      }
+      const calculated = {{ closing_balance }};
+      const difference = value - calculated;
+      const color = difference < 0 ? '#dc2626' : (difference > 0 ? '#16a34a' : '#6b7280');
       display.textContent = 'Rs. ' + difference.toLocaleString('en-PK', {minimumFractionDigits: 0, maximumFractionDigits: 2});
       display.style.color = color;
     });

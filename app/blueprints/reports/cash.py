@@ -11,7 +11,14 @@ from app.services.cash_flow_svc import (
     CF_SOURCE_LABELS,
     apply_running_balance,
     categories_for_direction,
+    cf_used_category_ids,
+    cf_used_party_ids,
+    cf_used_subcategory_ids,
     collect_cash_flow_rows,
+    compute_physical_cash_difference,
+    delete_cf_category,
+    delete_cf_party,
+    delete_cf_subcategory,
     disable_cf_category,
     disable_cf_party,
     disable_cf_subcategory,
@@ -19,6 +26,7 @@ from app.services.cash_flow_svc import (
     enable_cf_party,
     enable_cf_subcategory,
     filter_cash_flow_rows,
+    parse_physical_cash_amount,
     rename_cf_category,
     rename_cf_subcategory,
     restore_manual_cash_flow_entry,
@@ -326,6 +334,48 @@ def cash_flow():
             flash(str(exc), 'danger')
         return _back()
 
+    if request.method == 'POST' and action == 'delete_category':
+        try:
+            delete_cf_category(request.form.get('category_id', type=int))
+            db.session.commit()
+            flash('Unused category deleted.', 'success')
+        except ValueError as exc:
+            db.session.rollback()
+            flash(str(exc), 'danger')
+        except Exception:
+            db.session.rollback()
+            logger.exception('Cash flow delete category failed')
+            flash('Unable to delete category.', 'danger')
+        return _back()
+
+    if request.method == 'POST' and action == 'delete_subcategory':
+        try:
+            delete_cf_subcategory(request.form.get('subcategory_id', type=int))
+            db.session.commit()
+            flash('Unused sub-category deleted.', 'success')
+        except ValueError as exc:
+            db.session.rollback()
+            flash(str(exc), 'danger')
+        except Exception:
+            db.session.rollback()
+            logger.exception('Cash flow delete subcategory failed')
+            flash('Unable to delete sub-category.', 'danger')
+        return _back()
+
+    if request.method == 'POST' and action == 'delete_party':
+        try:
+            delete_cf_party(request.form.get('party_id', type=int))
+            db.session.commit()
+            flash('Unused party deleted.', 'success')
+        except ValueError as exc:
+            db.session.rollback()
+            flash(str(exc), 'danger')
+        except Exception:
+            db.session.rollback()
+            logger.exception('Cash flow delete party failed')
+            flash('Unable to delete party.', 'danger')
+        return _back()
+
     if request.method == 'POST' and action in ('delete_entry', 'void_entry'):
         entry_id = request.form.get('entry_id', type=int)
         entry = CashFlowEntry.query.get(entry_id) if entry_id else None
@@ -385,10 +435,7 @@ def cash_flow():
             create_missing=True,
         )
         date_raw = (request.form.get('movement_date') or '').strip()
-        try:
-            payload['date_posted'] = datetime.strptime(date_raw, '%Y-%m-%dT%H:%M') if date_raw else pk_now()
-        except Exception:
-            payload['date_posted'] = pk_now()
+        payload['date_posted'] = resolve_posted_datetime(date_raw or None)
         try:
             if action == 'edit_entry':
                 entry = CashFlowEntry.query.get(entry_id) if entry_id else None
@@ -449,10 +496,6 @@ def cash_flow():
         to_date = fresh_start_date
 
     fresh_start_clamped = False
-    if from_date_dt < fresh_start_dt:
-        from_date_dt = fresh_start_dt
-        from_date = fresh_start_date
-        fresh_start_clamped = True
     if to_date_dt < from_date_dt:
         to_date_dt = from_date_dt
         to_date = from_date_dt.strftime('%Y-%m-%d')
@@ -503,86 +546,89 @@ def cash_flow():
         adjustment_date_dt = datetime.strptime(to_date, '%Y-%m-%d').date()
 
     adjustment_entry = CashFlowDifferenceAdjustment.query.filter_by(adjustment_date=adjustment_date_dt).first()
-    if request.method == 'POST' and action not in (
-        'add_category', 'add_subcategory', 'add_party', 'disable_category', 'disable_subcategory',
-        'enable_category', 'enable_subcategory', 'update_party', 'disable_party', 'enable_party',
-        'rename_category', 'rename_subcategory', 'delete_entry', 'void_entry', 'restore_entry',
-        'record_movement', 'edit_entry', 'set_opening_override', 'clear_opening_override', 'reset_fresh_start',
-    ):
-        if action == 'delete':
-            if adjustment_entry:
-                audit = CashFlowReconciliationAudit(
-                    reconciliation_id=adjustment_entry.id,
-                    adjustment_date=adjustment_entry.adjustment_date,
-                    change_type='DELETE',
-                    old_physical_cash=adjustment_entry.physical_cash_available,
-                    old_difference=adjustment_entry.difference if adjustment_entry.difference is not None else adjustment_entry.amount,
-                    old_reason=adjustment_entry.reason or adjustment_entry.note,
-                    changed_by=_current_username(),
-                    changed_at=pk_model_now(),
-                )
-                db.session.add(audit)
-                adjustment_entry.physical_cash_available = None
-                adjustment_entry.calculated_closing = None
-                adjustment_entry.difference = None
-                adjustment_entry.reason = None
-                adjustment_entry.amount = 0
-                adjustment_entry.note = 'Reconciliation removed; audit trail retained.'
-                adjustment_entry.edited_by = _current_username()
-                adjustment_entry.edited_date = pk_model_now()
-                adjustment_entry.edit_count = (adjustment_entry.edit_count or 0) + 1
-                db.session.commit()
-                flash(f'Reconciliation removed for {adjustment_date_dt.strftime("%Y-%m-%d")}. Audit trail retained.', 'success')
-        elif physical_cash_input == '':
-            flash('Physical Cash Available is required. Difference is calculated by the system.', 'danger')
-        else:
-            physical_cash_available = _money_round(physical_cash_input)
-            difference = _money_round(closing_balance - physical_cash_available)
-            username = _current_username()
-            if not adjustment_entry:
-                adjustment_entry = CashFlowDifferenceAdjustment(
-                    adjustment_date=adjustment_date_dt,
-                    created_by=username,
-                    created_at=pk_model_now(),
-                    edit_count=0,
-                )
-                db.session.add(adjustment_entry)
-                db.session.flush()
-                change_type = 'CREATE'
-                old_physical_cash = None
-                old_difference = None
-                old_reason = None
-            else:
-                change_type = 'EDIT' if adjustment_entry.physical_cash_available is not None else 'CREATE'
-                old_physical_cash = adjustment_entry.physical_cash_available
-                old_difference = adjustment_entry.difference if adjustment_entry.difference is not None else adjustment_entry.amount
-                old_reason = adjustment_entry.reason or adjustment_entry.note
-                adjustment_entry.old_physical_cash = old_physical_cash
-                adjustment_entry.edited_by = username
-                adjustment_entry.edited_date = pk_model_now()
-
-            adjustment_entry.physical_cash_available = physical_cash_available
-            adjustment_entry.calculated_closing = _money_round(closing_balance)
-            adjustment_entry.difference = difference
-            adjustment_entry.amount = difference
-            adjustment_entry.reason = reconciliation_reason
-            adjustment_entry.note = reconciliation_reason
-            adjustment_entry.edit_count = (adjustment_entry.edit_count or 0) + 1
-            db.session.add(CashFlowReconciliationAudit(
+    if request.method == 'POST' and action == 'delete':
+        if adjustment_entry:
+            audit = CashFlowReconciliationAudit(
                 reconciliation_id=adjustment_entry.id,
-                adjustment_date=adjustment_date_dt,
-                change_type=change_type,
-                old_physical_cash=old_physical_cash,
-                new_physical_cash=physical_cash_available,
-                old_difference=old_difference,
-                new_difference=difference,
-                old_reason=old_reason,
-                new_reason=reconciliation_reason,
-                changed_by=username,
+                adjustment_date=adjustment_entry.adjustment_date,
+                change_type='DELETE',
+                old_physical_cash=adjustment_entry.physical_cash_available,
+                old_difference=adjustment_entry.difference if adjustment_entry.difference is not None else adjustment_entry.amount,
+                old_reason=adjustment_entry.reason or adjustment_entry.note,
+                changed_by=_current_username(),
                 changed_at=pk_model_now(),
-            ))
+            )
+            db.session.add(audit)
+            adjustment_entry.physical_cash_available = None
+            adjustment_entry.calculated_closing = None
+            adjustment_entry.difference = None
+            adjustment_entry.reason = None
+            adjustment_entry.amount = 0
+            adjustment_entry.note = 'Reconciliation removed; audit trail retained.'
+            adjustment_entry.edited_by = _current_username()
+            adjustment_entry.edited_date = pk_model_now()
+            adjustment_entry.edit_count = (adjustment_entry.edit_count or 0) + 1
             db.session.commit()
-            flash(f'Reconciliation saved for {adjustment_date_dt.strftime("%Y-%m-%d")}. Next day opening will be Rs. {physical_cash_available:,.0f}.', 'success')
+            flash(f'Reconciliation removed for {adjustment_date_dt.strftime("%Y-%m-%d")}. Audit trail retained.', 'success')
+        return _back()
+
+    if request.method == 'POST' and action == 'save_reconciliation':
+        try:
+            physical_cash_available = parse_physical_cash_amount(physical_cash_input)
+        except ValueError as exc:
+            flash(str(exc), 'danger')
+            return _back()
+        difference = compute_physical_cash_difference(physical_cash_available, closing_balance)
+        username = _current_username()
+        if not adjustment_entry:
+            adjustment_entry = CashFlowDifferenceAdjustment(
+                adjustment_date=adjustment_date_dt,
+                created_by=username,
+                created_at=pk_model_now(),
+                edit_count=0,
+            )
+            db.session.add(adjustment_entry)
+            db.session.flush()
+            change_type = 'CREATE'
+            old_physical_cash = None
+            old_difference = None
+            old_reason = None
+        else:
+            change_type = 'EDIT' if adjustment_entry.physical_cash_available is not None else 'CREATE'
+            old_physical_cash = adjustment_entry.physical_cash_available
+            old_difference = adjustment_entry.difference if adjustment_entry.difference is not None else adjustment_entry.amount
+            old_reason = adjustment_entry.reason or adjustment_entry.note
+            adjustment_entry.old_physical_cash = old_physical_cash
+            adjustment_entry.edited_by = username
+            adjustment_entry.edited_date = pk_model_now()
+
+        adjustment_entry.physical_cash_available = physical_cash_available
+        adjustment_entry.calculated_closing = _money_round(closing_balance)
+        adjustment_entry.difference = difference
+        adjustment_entry.amount = difference
+        adjustment_entry.reason = reconciliation_reason
+        adjustment_entry.note = reconciliation_reason
+        adjustment_entry.edit_count = (adjustment_entry.edit_count or 0) + 1
+        db.session.add(CashFlowReconciliationAudit(
+            reconciliation_id=adjustment_entry.id,
+            adjustment_date=adjustment_date_dt,
+            change_type=change_type,
+            old_physical_cash=old_physical_cash,
+            new_physical_cash=physical_cash_available,
+            old_difference=old_difference,
+            new_difference=difference,
+            old_reason=old_reason,
+            new_reason=reconciliation_reason,
+            changed_by=username,
+            changed_at=pk_model_now(),
+        ))
+        db.session.commit()
+        flash(
+            f'Reconciliation saved for {adjustment_date_dt.strftime("%Y-%m-%d")}. '
+            f'Next day opening will be Rs. {physical_cash_available:,.0f}. Account balances were not changed.',
+            'success',
+        )
+        return _back()
 
     adjustment_entry = CashFlowDifferenceAdjustment.query.filter_by(adjustment_date=adjustment_date_dt).first()
     physical_cash_available = adjustment_entry.physical_cash_available if adjustment_entry and adjustment_entry.physical_cash_available is not None else None
@@ -637,6 +683,11 @@ def cash_flow():
         cf_categories=cf_categories,
         cf_subcategories=cf_subcategories,
         cf_parties=cf_parties,
+        cf_parties_all=cf_parties_all,
+        used_category_ids=cf_used_category_ids(),
+        used_subcategory_ids=cf_used_subcategory_ids(),
+        used_party_ids=cf_used_party_ids(),
+        default_movement_datetime=pk_now().strftime('%Y-%m-%dT%H:%M'),
         party_types=CF_PARTY_TYPES,
         source_options=source_options,
         created_by_options=created_by_options,

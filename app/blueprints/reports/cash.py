@@ -132,6 +132,10 @@ def cash_flow_subcategories_meta():
                 parent_id = int(raw_parent) if raw_parent not in (None, '') else None
             except (TypeError, ValueError):
                 parent_id = None
+            if not parent_id and payload.get('category_name'):
+                cat_obj = CashFlowCategory.query.filter(func.lower(CashFlowCategory.name) == payload.get('category_name').strip().lower()).first()
+                if cat_obj:
+                    parent_id = cat_obj.id
             sub, created = save_cf_subcategory(
                 parent_id,
                 payload.get('name') or payload.get('new_subcategory_name'),
@@ -780,6 +784,12 @@ def cash_flow():
             continue
         source_options.append((key.lower(), label))
 
+    today_str = fresh_start_date
+    yesterday_str = (fresh_start_dt - timedelta(days=1)).strftime('%Y-%m-%d')
+    this_week_str = (fresh_start_dt - timedelta(days=fresh_start_dt.weekday())).strftime('%Y-%m-%d')
+    this_month_str = fresh_start_dt.replace(day=1).strftime('%Y-%m-%d')
+    last_30_days_str = (fresh_start_dt - timedelta(days=30)).strftime('%Y-%m-%d')
+
     common = dict(
         rows=display_rows,
         cash_accounts=cash_accounts,
@@ -795,6 +805,11 @@ def cash_flow():
         party_types=CF_PARTY_TYPES,
         source_options=source_options,
         created_by_options=created_by_options,
+        today_str=today_str,
+        yesterday_str=yesterday_str,
+        this_week_str=this_week_str,
+        this_month_str=this_month_str,
+        last_30_days_str=last_30_days_str,
         breakdown_cat=summary['breakdown_cat'],
         breakdown_party=summary['breakdown_party'],
         breakdown_account=summary['breakdown_account'],

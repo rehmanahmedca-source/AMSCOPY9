@@ -75,9 +75,42 @@ def _cf_filter_kwargs(source):
     }
 
 
-@bp.route('/cash_flow/meta/categories')
+def _cf_json_payload():
+    if request.is_json:
+        return request.get_json(silent=True) or {}
+    return request.form
+
+
+@bp.route('/cash_flow/meta/categories', methods=['GET', 'POST'])
 @login_required
 def cash_flow_categories_meta():
+    if request.method == 'POST':
+        payload = _cf_json_payload()
+        try:
+            cat, created = save_cf_category(
+                payload.get('name') or payload.get('new_category_name'),
+                payload.get('direction') or payload.get('new_category_direction') or 'both',
+                notes=payload.get('notes') or payload.get('new_category_notes'),
+                actor=current_user,
+            )
+            db.session.commit()
+            return jsonify({
+                'ok': True,
+                'created': created,
+                'category': {
+                    'id': cat.id,
+                    'name': cat.name,
+                    'direction': cat.direction or 'both',
+                    'notes': cat.notes or '',
+                },
+            })
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'ok': False, 'error': str(exc)}), 400
+        except Exception:
+            db.session.rollback()
+            logger.exception('Cash flow quick-add category failed')
+            return jsonify({'ok': False, 'error': 'Unable to save category.'}), 500
     direction = _cf_normalize_direction(request.args.get('direction') or '')
     cats = categories_for_direction(direction or 'both')
     return jsonify({
@@ -88,9 +121,41 @@ def cash_flow_categories_meta():
     })
 
 
-@bp.route('/cash_flow/meta/subcategories')
+@bp.route('/cash_flow/meta/subcategories', methods=['GET', 'POST'])
 @login_required
 def cash_flow_subcategories_meta():
+    if request.method == 'POST':
+        payload = _cf_json_payload()
+        try:
+            raw_parent = payload.get('category_id') or payload.get('new_sub_category_id')
+            try:
+                parent_id = int(raw_parent) if raw_parent not in (None, '') else None
+            except (TypeError, ValueError):
+                parent_id = None
+            sub, created = save_cf_subcategory(
+                parent_id,
+                payload.get('name') or payload.get('new_subcategory_name'),
+                notes=payload.get('notes') or payload.get('new_subcategory_notes'),
+                actor=current_user,
+            )
+            db.session.commit()
+            return jsonify({
+                'ok': True,
+                'created': created,
+                'subcategory': {
+                    'id': sub.id,
+                    'name': sub.name,
+                    'category_id': sub.category_id,
+                    'notes': sub.notes or '',
+                },
+            })
+        except (TypeError, ValueError) as exc:
+            db.session.rollback()
+            return jsonify({'ok': False, 'error': str(exc)}), 400
+        except Exception:
+            db.session.rollback()
+            logger.exception('Cash flow quick-add subcategory failed')
+            return jsonify({'ok': False, 'error': 'Unable to save sub-category.'}), 500
     category_id = request.args.get('category_id', type=int)
     if not category_id:
         return jsonify({'subcategories': []})
@@ -98,6 +163,45 @@ def cash_flow_subcategories_meta():
         'subcategories': [
             {'id': s.id, 'name': s.name, 'category_id': s.category_id, 'notes': s.notes or ''}
             for s in subcategories_for_category(category_id)
+        ]
+    })
+
+
+@bp.route('/cash_flow/meta/parties', methods=['GET', 'POST'])
+@login_required
+def cash_flow_parties_meta():
+    if request.method == 'POST':
+        payload = _cf_json_payload()
+        try:
+            party, created = save_cf_party(
+                payload.get('name') or payload.get('new_party_name'),
+                payload.get('party_type') or payload.get('new_party_type') or 'person',
+                note=payload.get('note') or payload.get('new_party_note'),
+                actor=current_user,
+            )
+            db.session.commit()
+            return jsonify({
+                'ok': True,
+                'created': created,
+                'party': {
+                    'id': party.id,
+                    'name': party.name,
+                    'party_type': party.party_type or 'other',
+                    'note': party.note or '',
+                },
+            })
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'ok': False, 'error': str(exc)}), 400
+        except Exception:
+            db.session.rollback()
+            logger.exception('Cash flow quick-add party failed')
+            return jsonify({'ok': False, 'error': 'Unable to save party.'}), 500
+    parties = CashFlowParty.query.filter_by(is_active=True).order_by(CashFlowParty.name).all()
+    return jsonify({
+        'parties': [
+            {'id': p.id, 'name': p.name, 'party_type': p.party_type or 'other', 'note': p.note or ''}
+            for p in parties
         ]
     })
 

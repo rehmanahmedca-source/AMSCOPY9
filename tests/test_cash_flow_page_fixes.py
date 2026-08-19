@@ -312,6 +312,25 @@ def test_cash_flow_page_date_crud_and_physical_cash():
     assert empty.status_code == 200
     assert b'No money movements match these filters.' in empty.data
 
+    quick_cat = client.post('/cash_flow/meta/categories', json={
+        'name': 'Quick Fuel',
+        'direction': 'out',
+    })
+    assert quick_cat.status_code == 200
+    cat_body = quick_cat.get_json()
+    assert cat_body['ok'] is True
+    assert cat_body['category']['name'] == 'Quick Fuel'
+    assert cat_body['category']['direction'] == 'out'
+
+    quick_party = client.post('/cash_flow/meta/parties', json={
+        'name': 'Adnan Driver',
+        'party_type': 'person',
+    })
+    assert quick_party.status_code == 200
+    party_body = quick_party.get_json()
+    assert party_body['ok'] is True
+    assert party_body['party']['name'] == 'Adnan Driver'
+
     # Unknown / empty action must not demand physical cash.
     stray = client.post('/cash_flow', data={
         'from_date': today,

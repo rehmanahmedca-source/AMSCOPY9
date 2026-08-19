@@ -359,12 +359,12 @@
         const list = document.getElementById(RETURN_MATERIAL_LIST_ID);
         if (!list) return;
         list.innerHTML = '';
-        RETURN_MATERIALS.forEach((name) => {
+        RETURN_MATERIALS.forEach((mat) => {
             const div = document.createElement('div');
             div.className = 'combobox-item';
-            div.dataset.value = name;
-            div.innerHTML = `<span class="fw-bold text-warning code-span">${name}</span>`;
-            div.addEventListener('click', () => selectReturnMaterial(name));
+            div.dataset.value = mat.name;
+            div.innerHTML = `<span class="fw-bold text-warning code-span">${mat.name}</span>`;
+            div.addEventListener('click', () => selectReturnMaterial(mat.name, mat.id));
             list.appendChild(div);
         });
     }

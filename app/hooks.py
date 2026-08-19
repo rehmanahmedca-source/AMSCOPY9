@@ -10,7 +10,33 @@ def register_hooks(app):
     from models import Client, Material, DeliveryPerson, Settings
     from app.services.backup import _start_hourly_backup_worker, _start_reconcile_worker
     from app.services.permissions import _user_can
-    from app.services.constants import _AUTO_BACKUP_ENABLED, ENDPOINT_PERMISSION_MAP
+    from app.services.constants import (
+        _AUTO_BACKUP_ENABLED,
+        BLUEPRINT_PERMISSION_PREFIXES,
+        ENDPOINT_PERMISSION_MAP,
+    )
+    @app.after_request
+    def _cache_control_headers(response):
+        # On-demand edit/view modal fragments must never be served stale —
+        # a stale fragment is the classic "click edit -> stuck overlay".
+        endpoint = request.endpoint or ''
+        short = endpoint.rsplit('.', 1)[-1] if endpoint else ''
+        if short in (
+            'direct_sale_edit_modal',
+            'booking_edit_modal',
+            'pending_bill_modals',
+            'client_modals',
+        ):
+            response.headers['Cache-Control'] = 'no-store'
+            return response
+        # HTML pages: revalidate every time.  Yard PCs share this server over
+        # LAN and code updates deploy often; without this, a cached page can
+        # run OLD page scripts against NEW routes and hang (edit modal stuck
+        # forever).  Static assets keep their own caching rules.
+        if (response.headers.get('Content-Type') or '').startswith('text/html'):
+            response.headers['Cache-Control'] = 'no-cache'
+        return response
+
     @app.after_request
     def allow_iframe_and_cors(response):
         if os.environ.get('ALLOW_OPEN_CORS', '').lower() in ('1', 'true', 'yes'):
@@ -192,9 +218,17 @@ def register_hooks(app):
         needed = ENDPOINT_PERMISSION_MAP.get(endpoint)
         if not needed and '.' in endpoint:
             needed = ENDPOINT_PERMISSION_MAP.get(endpoint.rsplit('.', 1)[-1])
+        # Whole-feature-pack fallback (e.g. every /accounts route).
+        if not needed and '.' in endpoint:
+            needed = BLUEPRINT_PERMISSION_PREFIXES.get(endpoint.split('.', 1)[0])
         if not needed:
             return None
-        if _user_can(needed):
+        # A tuple means "any of these permissions" (OR semantics).
+        if isinstance(needed, (tuple, list, set)):
+            allowed = any(_user_can(p) for p in needed)
+        else:
+            allowed = _user_can(needed)
+        if allowed:
             return None
         flash('Permission denied for this module.', 'danger')
         return redirect(url_for('index'))

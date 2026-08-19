@@ -105,7 +105,14 @@ def _accounts_permission_check():
     if not current_user.is_authenticated:
         return
     role_norm = (getattr(current_user, 'role', '') or '').strip().lower()
-    if role_norm not in ('admin', 'root') and not getattr(current_user, 'can_manage_payments', False):
+    # Module entry: admin/root, the dedicated Khata flag, or a payment
+    # manager (legacy path).  Account MASTER mutations are checked again
+    # inside each view via _deny_account_master_mutation() (admin/root only).
+    if (
+        role_norm not in ('admin', 'root')
+        and not getattr(current_user, 'can_manage_accounts', False)
+        and not getattr(current_user, 'can_manage_payments', False)
+    ):
         from flask import abort
         abort(403)
 

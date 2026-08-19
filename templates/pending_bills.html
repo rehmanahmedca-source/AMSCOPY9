@@ -348,35 +348,23 @@
             });
     }
 
-    async function loadPendingBillModal(url, mode) {
-        const host = document.getElementById('lazyPendingBillModalHost');
-        if (!host || !url) return;
-        host.setAttribute('aria-busy', 'true');
-        try {
-            const response = await fetch(url, {headers: {'X-Requested-With': 'XMLHttpRequest'}});
-            if (!response.ok) throw new Error(`Unable to load bill (${response.status})`);
-            host.innerHTML = await response.text();
-            const prefix = mode === 'edit' ? 'editBillModal' : 'viewBillModal';
-            const modalEl = host.querySelector(`[id^="${prefix}"]`);
-            if (!modalEl) throw new Error('Bill dialog was not returned');
-            if (mode !== 'edit') {
-                modalEl.addEventListener('shown.bs.modal', () => {
-                    const billId = modalEl.id.replace('viewBillModal', '');
-                    const billLink = modalEl.querySelector('.modal-body a.text-warning');
-                    if (billId && billLink) checkBill(billLink.textContent.trim(), billId);
-                }, {once: true});
-            }
-            modalEl.addEventListener('hidden.bs.modal', () => {
-                bootstrap.Modal.getInstance(modalEl)?.dispose();
-                host.replaceChildren();
-            }, {once: true});
-            bootstrap.Modal.getOrCreateInstance(modalEl).show();
-        } catch (error) {
-            console.error(error);
-            window.alert('The bill dialog could not be loaded. Please try again.');
-        } finally {
-            host.removeAttribute('aria-busy');
-        }
+    function loadPendingBillModal(url, mode) {
+        const isEdit = mode === 'edit';
+        AMSLazyModal.load({
+            hostId: 'lazyPendingBillModalHost',
+            url: url,
+            selector: `[id^="${isEdit ? 'editBillModal' : 'viewBillModal'}"]`,
+            label: isEdit ? 'Loading bill form…' : 'Loading bill details…',
+            onReady: function (modalEl) {
+                if (!isEdit) {
+                    modalEl.addEventListener('shown.bs.modal', () => {
+                        const billId = modalEl.id.replace('viewBillModal', '');
+                        const billLink = modalEl.querySelector('.modal-body a.text-warning');
+                        if (billId && billLink) checkBill(billLink.textContent.trim(), billId);
+                    }, {once: true});
+                }
+            },
+        });
     }
 
     document.addEventListener('DOMContentLoaded', function() {

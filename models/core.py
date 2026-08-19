@@ -79,6 +79,8 @@ class User(UserMixin, db.Model):
     can_manage_materials = db.Column(db.Boolean, default=False)
     can_manage_delivery_persons = db.Column(db.Boolean, default=False)
     can_access_settings = db.Column(db.Boolean, default=False)
+    can_manage_accounts = db.Column(db.Boolean, default=False)
+    can_view_cash_flow = db.Column(db.Boolean, default=False)
     restrict_backdated_edit = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=pk_model_now)
 

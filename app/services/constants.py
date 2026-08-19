@@ -144,6 +144,8 @@ USER_PERMISSION_DEFAULTS = {
     'can_manage_materials': False,
     'can_manage_delivery_persons': False,
     'can_access_settings': False,
+    'can_manage_accounts': False,
+    'can_view_cash_flow': False,
 }
 
 PERMISSION_LEGACY_FALLBACKS = {
@@ -288,6 +290,87 @@ ENDPOINT_PERMISSION_MAP = {
     'inventory.stock_summary': 'can_view_stock',
     'inventory.daily_transactions': 'can_view_daily',
     'inventory.inventory_log': 'can_view_history',
+
+    # --- Sales / Bookings / Pending Bills: draft & on-demand edit modals ---
+    'booking_edit_modal': 'can_manage_bookings',
+    'hold_direct_sale': 'can_manage_sales',
+    'resume_direct_sale_draft': 'can_manage_sales',
+    'delete_direct_sale_draft': 'can_manage_sales',
+    'direct_sale_edit_modal': 'can_manage_sales',
+    'pending_bill_modals': 'can_manage_pending_bills',
+    'client_modals': 'can_manage_clients',
+    'rename_material_label': 'can_manage_materials',
+
+    # --- Cash Flow module (new) ---
+    'cash_flow': 'can_view_cash_flow',
+    'cash_flow_categories_meta': 'can_view_cash_flow',
+    'cash_flow_subcategories_meta': 'can_view_cash_flow',
+    'cash_flow_parties_meta': 'can_view_cash_flow',
+    'cash_flow_entry_json': 'can_view_cash_flow',
+    'cash_flow_differences': 'can_view_cash_flow',
+    'cash_flow_reconciliation_detail': 'can_view_cash_flow',
+    'current_payables_api': 'can_view_cash_flow',
+    'current_payable_detail_api': 'can_view_cash_flow',
+
+    # --- Import / Export: async job engine + extended pages ---
+    'import_upload_file': 'can_import_export',
+    'import_list_uploads': 'can_import_export',
+    'import_get_upload': 'can_import_export',
+    'import_delete_upload': 'can_import_export',
+    'import_start_job': 'can_import_export',
+    'import_job_progress': 'can_import_export',
+    'import_job_history': 'can_import_export',
+    'import_browse_history': 'can_import_export',
+    'import_cancel_job': 'can_import_export',
+    'full_raw_import_history': 'can_import_export',
+    'full_raw_import_report': 'can_import_export',
+    'tenant_db_export': 'can_import_export',
+    'tenant_db_restore': 'can_import_export',
+    'transfer_export': 'can_import_export',
+    'transfer_import': 'can_import_export',
+
+    # --- Supplier ledger: PDF/voucher downloads + pay form ---
+    'download_supplier_ledger': 'can_view_supplier_ledger',
+    'download_supplier_payment': 'can_view_supplier_ledger',
+    'pay_supplier_page': 'can_manage_suppliers',
+    'supplier_opening_balance': 'can_manage_suppliers',
+    'client_opening_balance': 'can_manage_clients',
+
+    # --- Delivery person ledger: page + APIs + PDF (view) / payments (manage) ---
+    'delivery_person_ledger': ('can_view_delivery_rent', 'can_view_client_ledger'),
+    'delivery_person_ledger_api': ('can_view_delivery_rent', 'can_view_client_ledger'),
+    'delivery_person_search_api': ('can_view_delivery_rent', 'can_view_client_ledger'),
+    'download_delivery_person_ledger': ('can_view_delivery_rent', 'can_view_client_ledger'),
+    'delivery_person_opening_balance': 'can_manage_delivery_persons',
+    'settle_delivery_person': 'can_manage_sales',
+    'edit_delivery_person_payment': 'can_manage_sales',
+    'void_delivery_person_payment': 'can_manage_sales',
+    'restore_delivery_person_payment': 'can_manage_sales',
+
+    # --- Ledger views & exports ---
+    'material_ledger_page': 'can_view_history',
+    'download_client_clearance': 'can_view_client_ledger',
+
+    # --- Redirect aliases for inventory pages ---
+    'daily_transactions_redirect': 'can_view_daily',
+    'stock_summary_redirect': 'can_view_stock',
+    'export_current_payables': 'can_view_reports',
+
+    # --- Admin diagnostics ---
+    'api_financial_integrity_audit': 'can_access_settings',
+}
+
+# Blueprint-level fallback: every endpoint inside these blueprints needs the
+# given permission (a tuple = any of them, OR semantics).  Covers whole
+# feature packs (e.g. the Financial Accounts module, ~40 endpoints) without
+# listing each route, and keeps protecting future routes in the same blueprint.
+# The Accounts module keeps its historical rule: payment managers can
+# transact there (enforced again inside the views), while the dedicated
+# can_manage_accounts flag opens the Khata module for other roles.  Account
+# MASTER operations (add/edit/delete/toggle) stay admin/root-only inside the
+# views regardless of these flags.
+BLUEPRINT_PERMISSION_PREFIXES = {
+    'accounts': ('can_manage_accounts', 'can_manage_payments'),
 }
 
 AUTO_BILL_NS_DEFAULT = 'GEN'
@@ -323,7 +406,48 @@ EDITABLE_USER_PERMISSION_FIELDS = [
     'can_manage_suppliers',
     'can_manage_materials',
     'can_manage_delivery_persons',
+    'can_manage_accounts',
+    'can_view_cash_flow',
     'can_access_settings',
+]
+
+# Single source of truth for the Settings user-role UI: which features exist,
+# grouped by module.  The permission checkboxes (add/edit user) and the
+# Feature x User access matrix both render from this list.
+PERMISSION_GROUPS = [
+    ('Operations', [
+        ('can_view_dashboard', 'Dashboard'),
+        ('can_manage_grn', 'GRN (Receiving)'),
+        ('can_view_stock', 'Stock Summary'),
+        ('can_view_daily', 'Daily Breakdown'),
+        ('can_view_history', 'History & Bills'),
+    ]),
+    ('Sales & Billing', [
+        ('can_manage_bookings', 'Bookings'),
+        ('can_manage_sales', 'Sales (Direct Sale / Returns / Void)'),
+        ('can_manage_payments', 'Payments'),
+        ('can_manage_pending_bills', 'Pending Bills'),
+        ('can_view_delivery_rent', 'Delivery Rent + Driver Ledger'),
+    ]),
+    ('Ledgers & Reports', [
+        ('can_view_client_ledger', 'Client Ledger / Clearance'),
+        ('can_view_supplier_ledger', 'Supplier Ledger / Vouchers'),
+        ('can_view_decision_ledger', 'Decision Ledger'),
+        ('can_view_reports', 'Reports (Profit / Unpaid / Mixed)'),
+        ('can_view_cash_flow', 'Cash Flow + Differences'),
+    ]),
+    ('Masters', [
+        ('can_manage_clients', 'Manage Clients (Add/Edit/Delete)'),
+        ('can_manage_suppliers', 'Manage Suppliers + Supplier Payments'),
+        ('can_manage_materials', 'Manage Materials + Categories'),
+        ('can_manage_delivery_persons', 'Manage Delivery Persons'),
+    ]),
+    ('Finance & System', [
+        ('can_manage_accounts', 'Financial Accounts (Khata module)'),
+        ('can_manage_notifications', 'Notifications / Reminders'),
+        ('can_import_export', 'Import / Export Center'),
+        ('can_access_settings', 'Settings Access (page + activity log)'),
+    ]),
 ]
 
 

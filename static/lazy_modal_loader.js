@@ -1,4 +1,4 @@
-/* AMS lazy modal loader v2 — one robust fetch-then-open helper for every
+/* AMS lazy modal loader v3 — one robust fetch-then-open helper for every
    on-demand edit/view modal (sales, bookings, pending bills, clients).
 
    Fixes the old "click edit -> overlay stuck, keeps loading, no result":
@@ -11,6 +11,20 @@
         error, or a response missing the modal markup).  Cancelling or
         closing the error dialog always frees the lock, so Edit works again.
      5. Clean teardown when the real modal closes (dispose + clear host).
+
+   v3 — kills the "spinner then nothing / grey layer stays" race:
+     Bootstrap 5.3 Modal.hide() silently NO-OPs while the modal is still
+     opening, and Modal.show() silently NO-OPs while it is still closing
+     (the _isTransitioning guard).  When the server answers faster than the
+     150ms/300ms fade transitions, hideLoader() was swallowed and the
+     spinner + its backdrop stayed on screen forever; when the initializer
+     threw right after hideLoader(), showError()'s show() was swallowed and
+     the user saw the spinner vanish and then NOTHING (and no Retry dialog).
+     The loader dialog now renders WITHOUT the `fade` class, which makes
+     Bootstrap run show()/hide() callbacks synchronously — the interleave
+     window in which calls get swallowed disappears entirely.  A post-show
+     verification additionally surfaces a visible Retry dialog instead of a
+     silent failure if Bootstrap ever refuses to display the fetched form.
 
    Usage (page script):
      AMSLazyModal.load({
@@ -33,8 +47,14 @@
     function ensureLoaderModal() {
         if (loaderModalEl && document.body.contains(loaderModalEl)) return loaderModalEl;
         var wrap = document.createElement('div');
+        // NOTE: no `fade` class on purpose.  With fade, Bootstrap 5.3 opens/
+        // closes through async transitions and any show()/hide() issued during
+        // that window is silently dropped (the _isTransitioning guard).  This
+        // loader is shown and hidden programmatically back-to-back, sometimes
+        // within the same tick as a fast fetch response, so it must be
+        // transition-free to stay deterministic.
         wrap.innerHTML =
-            '<div class="modal fade" id="amsLazyModalLoader" tabindex="-1">' +
+            '<div class="modal" id="amsLazyModalLoader" tabindex="-1">' +
             '  <div class="modal-dialog modal-dialog-centered">' +
             '    <div class="modal-content border-secondary bg-dark text-white" style="min-width:280px;">' +
             '      <div class="modal-body text-center py-4">' +
@@ -88,6 +108,9 @@
         var el = ensureLoaderModal();
         loaderState = 'error';
         el.querySelector('#amsLazyLoaderState').replaceChildren(errorState(message, onRetry));
+        // Without fade this opens synchronously, so the error (and its Retry
+        // button) is ALWAYS visible — it can no longer be swallowed by the
+        // loader's in-flight hide transition.
         bootstrap.Modal.getOrCreateInstance(el).show();
     }
 
@@ -169,6 +192,18 @@
                     }, { once: true });
                     releaseHost(hostId);
                     bootstrap.Modal.getOrCreateInstance(modalEl).show();
+                    // Safety net: if Bootstrap still refused to display the
+                    // form (transitioning instance from an earlier open, a
+                    // backdrop misfire, …), never fail silently — show the
+                    // error dialog with Retry instead of a dead grey layer.
+                    setTimeout(function () {
+                        if (!modalEl.isConnected) return;   // already closed & cleaned up
+                        var inst = bootstrap.Modal.getInstance(modalEl);
+                        if (inst && inst._isShown === false && !modalEl.classList.contains('show')) {
+                            console.error('[AMSLazyModal] fetched modal never entered shown state:', opts.url);
+                            showError('The form could not be displayed. Press Retry.', function () { attempt(); });
+                        }
+                    }, 700);
                 })
                 .catch(function (error) {
                     clearTimeout(timer);

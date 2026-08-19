@@ -207,5 +207,35 @@ const fireTimers = () => { timers.forEach(fn => fn && fn()); timers.length = 0; 
     assert.strictEqual(getInstance(realModalStub).shown, 1, 'Edit works again after cancel');
     console.log('PASS 5 closing error dialog frees the lock');
 
+    /* 6. Bootstrap missing (CDN/vendor failure) -> LOUD visible failure, no fetch,
+          no silent dead Edit button */
+    resetHost();
+    const savedBootstrap = sandbox.bootstrap;
+    let alerted = null;
+    sandbox.alert = (m) => { alerted = m; };
+    delete sandbox.bootstrap;
+    const fetchesBefore = fetchCount;
+    AMS.load({ hostId: 'lazyEditSaleModalHost', url: '/x', selector: '[id^="editSaleModal"]' });
+    await flush();
+    assert.strictEqual(fetchCount, fetchesBefore, 'no fetch when bootstrap is missing');
+    assert.ok(alerted && /Bootstrap UI library did not load/.test(alerted), 'visible alert explains the failure');
+    assert.strictEqual(hostStub._busy, false, 'no lock taken when bootstrap is missing');
+    sandbox.bootstrap = savedBootstrap;
+    delete sandbox.alert;
+    console.log('PASS 6 missing bootstrap -> visible alert, no silent dead button');
+
+    /* 7. A throwing onReady initializer must NOT stop the fetched form from opening */
+    resetHost();
+    setFetch({ status: 200, body: 'ok7' });
+    let boom = null;
+    AMS.load({
+        hostId: 'lazyEditSaleModalHost', url: '/x', selector: '[id^="editSaleModal"]',
+        onReady() { boom = new Error('init exploded'); throw boom; },
+    });
+    await flush();
+    assert.strictEqual(getInstance(realModalStub).shown, 1, 'modal still shown when initializer throws');
+    assert.strictEqual(hostStub._busy, false, 'lock freed when initializer throws');
+    console.log('PASS 7 initializer failure does not block the form');
+
     console.log('\nALL LOADER STATE-MACHINE TESTS PASSED');
 })().catch(e => { console.error('FAIL:', e && e.stack || e); process.exit(1); });

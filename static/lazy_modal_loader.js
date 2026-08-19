@@ -104,11 +104,31 @@
         if (activeHost === hostId) activeHost = null;
     }
 
+    // [Ahmed] Guard: Bootstrap MUST be present before any modal work. When the
+    // UI library fails to load, a silent ReferenceError used to make every
+    // Edit button dead with no feedback at all. Make the failure visible and
+    // actionable instead (alert() needs no library).
+    function bootstrapAvailable() {
+        return typeof window.bootstrap !== 'undefined' && !!window.bootstrap.Modal;
+    }
+
+    function reportBootstrapMissing() {
+        var msg = 'Edit form cannot open: the Bootstrap UI library did not load from this server. ' +
+                  'Reload the page (Ctrl+F5) and try again. If it keeps happening, the /static/vendor ' +
+                  'files are missing on the server — contact the administrator.';
+        console.error('[AMSLazyModal] ' + msg);
+        window.alert(msg);
+    }
+
     function load(opts) {
         var hostId = opts.hostId;
         var host = document.getElementById(hostId);
         if (!host || !opts.url) {
             console.error('[AMSLazyModal] missing host or url — hostId=' + hostId + ' url=' + opts.url);
+            return;
+        }
+        if (!bootstrapAvailable()) {
+            reportBootstrapMissing();
             return;
         }
         if (inFlight[hostId]) return;           // already loading / retrying — ignore re-clicks
@@ -132,7 +152,17 @@
                     host.innerHTML = html;
                     var modalEl = host.querySelector(opts.selector || '[class^="modal"]');
                     if (!modalEl) throw new Error('The form was not returned by the server. Try again.');
-                    if (typeof opts.onReady === 'function') opts.onReady(modalEl);
+                    // [Ahmed] A throwing onReady initializer used to prevent
+                    // .show() below, so a successfully fetched edit form still
+                    // never appeared. Isolate initializer failures: log them,
+                    // but still open the form.
+                    if (typeof opts.onReady === 'function') {
+                        try {
+                            opts.onReady(modalEl);
+                        } catch (initErr) {
+                            console.error('[AMSLazyModal] edit-form initializer failed (form still opened):', initErr);
+                        }
+                    }
                     modalEl.addEventListener('hidden.bs.modal', function () {
                         bootstrap.Modal.getInstance(modalEl)?.dispose();
                         host.replaceChildren();

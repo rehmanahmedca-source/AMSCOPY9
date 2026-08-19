@@ -119,6 +119,111 @@
   {% endset %}
   {{ ui_header('bi-water', 'Cash Flow', subtitle='A transaction engine. Categories and sub-categories are yours to create — nothing is hard-coded. Company accounts come from Accounts.', toolbar=_toolbar) }}
 
+  <!-- TOP TAB NAVIGATION -->
+  <nav class="cf-tabs d-print-none" id="cfTabs" role="tablist" aria-label="Cash flow sections">
+    <button type="button" class="cf-tab active" data-cf-tab="financial" role="tab" aria-selected="true">
+      <span class="cf-tab-ico"><i class="bi bi-graph-up"></i></span>
+      <span><span class="cf-tab-title">Financial Details</span><span class="cf-tab-sub">Balances &amp; totals</span></span>
+    </button>
+    <button type="button" class="cf-tab" data-cf-tab="transaction" role="tab" aria-selected="false">
+      <span class="cf-tab-ico"><i class="bi bi-plus-circle"></i></span>
+      <span><span class="cf-tab-title">New Transaction</span><span class="cf-tab-sub">Receive · Spend · Transfer</span></span>
+    </button>
+    <button type="button" class="cf-tab" data-cf-tab="transactions" role="tab" aria-selected="false">
+      <span class="cf-tab-ico"><i class="bi bi-table"></i></span>
+      <span><span class="cf-tab-title">Transactions</span><span class="cf-tab-sub">Filter &amp; ledger</span></span>
+    </button>
+    <button type="button" class="cf-tab" data-cf-tab="reconcile" role="tab" aria-selected="false">
+      <span class="cf-tab-ico"><i class="bi bi-check2-circle"></i></span>
+      <span><span class="cf-tab-title">Daily Reconciliations</span><span class="cf-tab-sub">Physical cash count</span></span>
+    </button>
+    <button type="button" class="cf-tab" data-cf-tab="master" role="tab" aria-selected="false">
+      <span class="cf-tab-ico"><i class="bi bi-sliders2"></i></span>
+      <span><span class="cf-tab-title">Master Data</span><span class="cf-tab-sub">Categories &amp; parties</span></span>
+    </button>
+  </nav>
+
+  {% if is_fresh_start_view %}
+  <div class="alert alert-secondary d-print-none py-2 small" style="border-radius:8px;">
+    Today’s list starts from {{ fresh_start_cutoff.strftime('%Y-%m-%d %H:%M') }} on this page only. Account balances are not changed.
+  </div>
+  {% endif %}
+
+  <!-- PANEL: FINANCIAL DETAILS -->
+  <section class="cf-panel" id="cfPanel-financial" data-cf-panel="financial">
+
+  <!-- CASH / BANK AMOUNT CARDS -->
+  <div class="row g-3 mb-4 d-print-none">
+    <div class="col-md-6">
+      <div class="cf-money-card">
+        <button type="button" class="cf-money-head" data-cf-collapse="#cfCashDetail" aria-expanded="false">
+          <span class="cf-money-ico" style="--mc:#16a34a;"><i class="bi bi-cash-stack"></i></span>
+          <span class="cf-money-text">
+            <span class="cf-money-label">Cash Amount (in hand)</span>
+            <span class="cf-money-value">Rs. {{ "{:,.0f}".format(cash_total) }}</span>
+          </span>
+          <span class="cf-money-count">{{ cash_accounts_list|length }} account{% if cash_accounts_list|length != 1 %}s{% endif %}</span>
+          <i class="bi bi-chevron-down cf-money-chev"></i>
+        </button>
+        <div class="cf-money-detail" id="cfCashDetail">
+          <div class="table-responsive">
+            <table class="ui-table mb-0">
+              <thead><tr><th>Cash account</th><th class="text-end">Period in</th><th class="text-end">Period out</th><th class="text-end">Balance</th><th></th></tr></thead>
+              <tbody>
+                {% for a in cash_accounts_list %}
+                {% set act = account_activity.get(a.id, {}) %}
+                <tr>
+                  <td class="fw-semibold">{{ a.name }}{% if a.note %}<div class="small text-muted">{{ a.note }}</div>{% endif %}</td>
+                  <td class="text-end text-success font-monospace">{% if act.get('in') %}Rs. {{ "{:,.0f}".format(act['in']) }}{% else %}—{% endif %}</td>
+                  <td class="text-end text-danger font-monospace">{% if act.get('out') %}Rs. {{ "{:,.0f}".format(act['out']) }}{% else %}—{% endif %}</td>
+                  <td class="text-end fw-bold font-monospace">Rs. {{ "{:,.0f}".format(a.balance or 0) }}</td>
+                  <td class="text-end"><a class="small" href="{{ url_for('accounts.account_ledger', account_id=a.id) }}">Ledger</a></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" class="ui-empty">No cash (in-hand) accounts yet.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="cf-money-card">
+        <button type="button" class="cf-money-head" data-cf-collapse="#cfBankDetail" aria-expanded="false">
+          <span class="cf-money-ico" style="--mc:#2563eb;"><i class="bi bi-bank2"></i></span>
+          <span class="cf-money-text">
+            <span class="cf-money-label">Bank Amount</span>
+            <span class="cf-money-value">Rs. {{ "{:,.0f}".format(bank_total) }}</span>
+          </span>
+          <span class="cf-money-count">{{ bank_accounts_list|length }} account{% if bank_accounts_list|length != 1 %}s{% endif %}</span>
+          <i class="bi bi-chevron-down cf-money-chev"></i>
+        </button>
+        <div class="cf-money-detail" id="cfBankDetail">
+          <div class="table-responsive">
+            <table class="ui-table mb-0">
+              <thead><tr><th>Bank account</th><th>Bank / details</th><th class="text-end">Period in</th><th class="text-end">Period out</th><th class="text-end">Balance</th></tr></thead>
+              <tbody>
+                {% for a in bank_accounts_list %}
+                {% set act = account_activity.get(a.id, {}) %}
+                <tr>
+                  <td class="fw-semibold">{{ a.name }}</td>
+                  <td class="small text-muted">{% if a.bank_name %}{{ a.bank_name }}{% endif %}{% if a.account_number %}<code>{{ a.account_number }}</code>{% endif %}</td>
+                  <td class="text-end text-success font-monospace">{% if act.get('in') %}Rs. {{ "{:,.0f}".format(act['in']) }}{% else %}—{% endif %}</td>
+                  <td class="text-end text-danger font-monospace">{% if act.get('out') %}Rs. {{ "{:,.0f}".format(act['out']) }}{% else %}—{% endif %}</td>
+                  <td class="text-end fw-bold font-monospace">Rs. {{ "{:,.0f}".format(a.balance or 0) }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" class="ui-empty">No bank accounts yet.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="row g-3 mb-4 d-print-none">
     <div class="col-md-4">
       <div class="ui-card h-100" style="border-left:4px solid #16a34a;">
@@ -185,11 +290,101 @@
     </div>
   </div>
 
-  {% if is_fresh_start_view %}
-  <div class="alert alert-secondary d-print-none py-2 small" style="border-radius:8px;">
-    Today’s list starts from {{ fresh_start_cutoff.strftime('%Y-%m-%d %H:%M') }} on this page only. Account balances are not changed.
+  <!-- KPI SUMMARY GRID -->
+  <div class="ui-kpi-grid mb-4">
+    <div class="ui-tile" style="border-left:4px solid #6366f1;">
+      <div class="ui-tile-label">Opening Balance</div>
+      <div class="ui-tile-value" style="color:var(--ui-text);">Rs. {{ "{:,.0f}".format(opening_balance) }}</div>
+      <div class="ui-tile-sub">Start of period</div>
+    </div>
+    <div class="ui-tile" style="border-left:4px solid #16a34a;">
+      <div class="ui-tile-label">Total Received [ IN ]</div>
+      <div class="ui-tile-value" style="color:#16a34a;">Rs. {{ "{:,.0f}".format(total_cash_in) }}</div>
+      <div class="ui-tile-sub">{{ from_date }} — {{ to_date }}</div>
+    </div>
+    <div class="ui-tile" style="border-left:4px solid #dc2626;">
+      <div class="ui-tile-label">Total Spent [ OUT ]</div>
+      <div class="ui-tile-value" style="color:#dc2626;">Rs. {{ "{:,.0f}".format(total_cash_out) }}</div>
+      <div class="ui-tile-sub">{{ from_date }} — {{ to_date }}</div>
+    </div>
+    <div class="ui-tile" style="border-left:4px solid #0369a1;">
+      <div class="ui-tile-label">Closing Balance</div>
+      <div class="ui-tile-value" style="color:#0369a1;">Rs. {{ "{:,.0f}".format(closing_balance) }}</div>
+      <div class="ui-tile-sub">Opening + received − spent</div>
+    </div>
+    <div class="ui-tile" style="border-left:4px solid #0ea5e9;">
+      <div class="ui-tile-label">Transfers</div>
+      <div class="ui-tile-value" style="color:#0ea5e9;">Rs. {{ "{:,.0f}".format(total_transfer_in or 0) }}</div>
+      <div class="ui-tile-sub">Not income or expense</div>
+    </div>
+    <div class="ui-tile" style="border-left:4px solid #f97316;">
+      <div class="ui-tile-label">Physical Cash</div>
+      <div class="ui-tile-value" style="color:#f97316;">{% if physical_cash_available is not none %}Rs. {{ "{:,.0f}".format(physical_cash_available) }}{% else %}-{% endif %}</div>
+      <div class="ui-tile-sub">Reconciliation for {{ adjustment_date_input }}</div>
+    </div>
+    <div class="ui-tile" style="border-left:4px solid #0f766e;">
+      <div class="ui-tile-label">Next Day Opening</div>
+      <div class="ui-tile-value" style="color:#0f766e;">Rs. {{ "{:,.0f}".format(adjusted_closing_balance) }}</div>
+      <div class="ui-tile-sub">Carry-forward to next period</div>
+    </div>
   </div>
-  {% endif %}
+
+  <!-- BREAKDOWN CARDS -->
+  <div class="row g-3 mt-3 d-print-none">
+    <div class="col-md-4">
+      <div class="ui-card h-100">
+        <div class="ui-card-header"><h6 class="mb-0 fw-bold"><i class="bi bi-tags me-1"></i> Breakdown by category</h6></div>
+        <div class="table-responsive">
+          <table class="ui-table">
+            <thead><tr><th>Category</th><th class="text-end">In</th><th class="text-end">Out</th></tr></thead>
+            <tbody>
+              {% for name, tot in (breakdown_cat or {}).items() %}
+              <tr><td>{{ name }}</td><td class="text-end text-success font-monospace">{{ "{:,.0f}".format(tot['in']) }}</td><td class="text-end text-danger font-monospace">{{ "{:,.0f}".format(tot['out']) }}</td></tr>
+              {% else %}
+              <tr><td colspan="3" class="ui-empty">No records</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="ui-card h-100">
+        <div class="ui-card-header"><h6 class="mb-0 fw-bold"><i class="bi bi-people me-1"></i> Breakdown by party</h6></div>
+        <div class="table-responsive">
+          <table class="ui-table">
+            <thead><tr><th>Party</th><th class="text-end">In</th><th class="text-end">Out</th></tr></thead>
+            <tbody>
+              {% for name, tot in (breakdown_party or {}).items() %}
+              <tr><td>{{ name }}</td><td class="text-end text-success font-monospace">{{ "{:,.0f}".format(tot['in']) }}</td><td class="text-end text-danger font-monospace">{{ "{:,.0f}".format(tot['out']) }}</td></tr>
+              {% else %}
+              <tr><td colspan="3" class="ui-empty">No records</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="ui-card h-100">
+        <div class="ui-card-header"><h6 class="mb-0 fw-bold"><i class="bi bi-wallet2 me-1"></i> Breakdown by account</h6></div>
+        <div class="table-responsive">
+          <table class="ui-table">
+            <thead><tr><th>Account</th><th class="text-end">In</th><th class="text-end">Out</th></tr></thead>
+            <tbody>
+              {% for name, tot in (breakdown_account or {}).items() %}
+              <tr><td>{{ name }}</td><td class="text-end text-success font-monospace">{{ "{:,.0f}".format(tot['in']) }}</td><td class="text-end text-danger font-monospace">{{ "{:,.0f}".format(tot['out']) }}</td></tr>
+              {% else %}
+              <tr><td colspan="3" class="ui-empty">No records</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  </section><!-- /financial -->
 
   <style>
     .cf-dir-tabs {
@@ -276,7 +471,178 @@
       padding: 2px 8px;
       border-radius: 6px;
     }
+    /* Top-level section tab cards */
+    .cf-tabs {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: .6rem;
+      margin-bottom: 1.1rem;
+    }
+    .cf-tab {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: .65rem;
+      text-align: left;
+      border: 1px solid var(--ui-border);
+      background: var(--ui-surface);
+      color: var(--ui-text);
+      border-radius: var(--ui-radius-lg);
+      padding: .8rem .9rem;
+      cursor: pointer;
+      transition: all .18s ease;
+      box-shadow: var(--ui-shadow-1);
+    }
+    .cf-tab:hover {
+      border-color: var(--ui-border-strong);
+      transform: translateY(-2px);
+    }
+    .cf-tab .cf-tab-ico {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 38px;
+      height: 38px;
+      flex: 0 0 38px;
+      border-radius: 10px;
+      font-size: 1.1rem;
+      background: var(--ui-surface-2);
+      color: var(--ui-accent);
+    }
+    .cf-tab .cf-tab-title {
+      display: block;
+      font-weight: 800;
+      font-size: .9rem;
+      line-height: 1.2;
+    }
+    .cf-tab .cf-tab-sub {
+      display: block;
+      font-size: .72rem;
+      color: var(--ui-text-muted);
+      margin-top: 2px;
+    }
+    .cf-tab.active {
+      border-color: var(--ui-accent);
+      background: linear-gradient(135deg, color-mix(in srgb, var(--ui-accent) 18%, var(--ui-surface)), var(--ui-surface));
+      box-shadow: var(--ui-shadow-2);
+    }
+    .cf-tab.active .cf-tab-ico {
+      background: var(--ui-accent);
+      color: #1a1200;
+    }
+    .cf-tab.active::after {
+      content: '';
+      position: absolute;
+      left: 16px;
+      right: 16px;
+      bottom: -1px;
+      height: 3px;
+      border-radius: 3px;
+      background: var(--ui-accent);
+    }
+    @media (max-width: 768px) {
+      .cf-tabs { grid-template-columns: 1fr; }
+    }
+    .cf-panel[hidden] { display: none !important; }
+
+    /* Cash / Bank amount summary cards */
+    .cf-money-card {
+      border: 1px solid var(--ui-border);
+      border-radius: var(--ui-radius-lg);
+      background: var(--ui-surface);
+      overflow: hidden;
+      box-shadow: var(--ui-shadow-1);
+    }
+    .cf-money-head {
+      display: flex;
+      align-items: center;
+      gap: .8rem;
+      width: 100%;
+      text-align: left;
+      background: transparent;
+      border: 0;
+      padding: .95rem 1rem;
+      color: var(--ui-text);
+      cursor: pointer;
+    }
+    .cf-money-head:hover { background: var(--ui-surface-2); }
+    .cf-money-ico {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 46px;
+      height: 46px;
+      flex: 0 0 46px;
+      border-radius: 12px;
+      font-size: 1.3rem;
+      background: color-mix(in srgb, var(--mc, var(--ui-accent)) 16%, transparent);
+      color: var(--mc, var(--ui-accent));
+    }
+    .cf-money-text { flex: 1 1 auto; min-width: 0; }
+    .cf-money-label {
+      display: block;
+      font-size: .72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: var(--ui-text-muted);
+    }
+    .cf-money-value {
+      display: block;
+      font-size: 1.5rem;
+      font-weight: 800;
+      font-family: monospace;
+      margin-top: 2px;
+      color: var(--ui-text);
+    }
+    .cf-money-count {
+      font-size: .75rem;
+      color: var(--ui-text-muted);
+      background: var(--ui-surface-2);
+      border: 1px solid var(--ui-border);
+      border-radius: var(--ui-radius-pill);
+      padding: 3px 10px;
+      white-space: nowrap;
+    }
+    .cf-money-chev { transition: transform .2s ease; color: var(--ui-text-muted); }
+    .cf-money-card.open .cf-money-chev { transform: rotate(180deg); }
+    .cf-money-detail {
+      display: none;
+      border-top: 1px solid var(--ui-border);
+      background: var(--ui-surface-2);
+    }
+    .cf-money-card.open .cf-money-detail { display: block; }
+
+    /* KPI tiles (previously unstyled) */
+    .ui-tile {
+      background: var(--ui-surface);
+      border: 1px solid var(--ui-border);
+      border-radius: var(--ui-radius-lg);
+      padding: 16px 18px;
+      box-shadow: var(--ui-shadow-1);
+    }
+    .ui-tile-label {
+      font-size: .72rem;
+      font-weight: 700;
+      letter-spacing: .5px;
+      text-transform: uppercase;
+      color: var(--ui-text-muted);
+    }
+    .ui-tile-value {
+      font-size: 1.4rem;
+      font-weight: 800;
+      margin-top: 4px;
+      line-height: 1.2;
+    }
+    .ui-tile-sub {
+      font-size: .76rem;
+      color: var(--ui-text-muted);
+      margin-top: 6px;
+    }
   </style>
+
+  <!-- PANEL: NEW TRANSACTION -->
+  <section class="cf-panel" id="cfPanel-transaction" data-cf-panel="transaction" hidden>
 
   <!-- TRANSACTION POSTING FORM -->
   <div class="ui-card mb-4 d-print-none">
@@ -527,6 +893,11 @@
     </div>
   </div>
 
+  </section><!-- /transaction -->
+
+  <!-- PANEL: MASTER DATA -->
+  <section class="cf-panel" id="cfPanel-master" data-cf-panel="master" hidden>
+
   <!-- MASTER DATA CRUD (CATEGORIES / SUBCATEGORIES / PARTIES) -->
   <details class="ui-card mb-4 d-print-none">
     <summary class="ui-card-header" style="cursor:pointer;">
@@ -722,6 +1093,11 @@
     </div>
   </details>
 
+  </section><!-- /master -->
+
+  <!-- PANEL: TRANSACTIONS -->
+  <section class="cf-panel" id="cfPanel-transactions" data-cf-panel="transactions" hidden>
+
   <!-- FILTERS SECTION WITH QUICK DATE PRESETS -->
   <div class="ui-card mb-4 d-print-none">
     <div class="ui-card-header d-flex justify-content-between align-items-center">
@@ -849,144 +1225,6 @@
     </div>
   </div>
 
-  <!-- ADVANCED: TODAY OPENING OVERRIDE -->
-  <details class="ui-card mb-4 d-print-none">
-    <summary class="ui-card-header" style="cursor:pointer;">
-      <h5 class="mb-0 d-inline"><i class="bi bi-sliders me-1 text-info"></i> Advanced: today opening (display only)</h5>
-      <small class="text-muted ms-2">Does not mutate Accounts balances.</small>
-    </summary>
-    <div class="ui-card-body">
-      <form method="POST" action="{{ url_for('cash_flow') }}" class="row g-3 align-items-end">
-        <input type="hidden" name="action" value="set_opening_override">
-        <input type="hidden" name="from_date" value="{{ fresh_start_date }}">
-        <input type="hidden" name="to_date" value="{{ fresh_start_date }}">
-        <input type="hidden" name="filter_type" value="all">
-        <div class="col-auto">
-          <label class="ui-label">Date</label>
-          <input type="date" class="form-control form-control-sm" value="{{ fresh_start_date }}" readonly>
-        </div>
-        <div class="col-auto">
-          <label class="ui-label">Opening Balance (Rs.)</label>
-          <input type="number" step="0.01" name="today_opening_override" class="form-control form-control-sm"
-                 style="width:180px;font-weight:bold;" value="{{ today_opening_override if today_opening_override is not none else 0 }}">
-        </div>
-        <div class="col-auto">
-          <button type="submit" class="btn btn-primary btn-sm fw-bold">
-            <i class="bi bi-pencil-square me-1"></i> Override Today Opening
-          </button>
-        </div>
-      </form>
-      {% if today_opening_override is not none %}
-      <form method="POST" action="{{ url_for('cash_flow') }}" class="mt-2">
-        <input type="hidden" name="action" value="clear_opening_override">
-        <button type="submit" class="btn btn-outline-secondary btn-sm fw-bold">
-          <i class="bi bi-x-circle me-1"></i> Back to Rs. 0 Opening
-        </button>
-      </form>
-      {% endif %}
-      <form method="POST" action="{{ url_for('cash_flow') }}" class="mt-2">
-        <input type="hidden" name="action" value="reset_fresh_start">
-        <button type="submit" class="btn btn-outline-danger btn-sm fw-bold">
-          <i class="bi bi-eye-slash me-1"></i> Hide Existing Entries Again
-        </button>
-      </form>
-    </div>
-  </details>
-
-  <!-- ADVANCED: PHYSICAL CASH RECONCILIATION -->
-  <details class="ui-card mb-4 d-print-none">
-    <summary class="ui-card-header" style="cursor:pointer;">
-      <h5 class="mb-0 d-inline"><i class="bi bi-check2-circle me-1 text-success"></i> End-of-day physical cash count &amp; reconciliation</h5>
-      <small class="text-muted ms-2">Optional physical cash check. Difference = Counted − System Closing.</small>
-    </summary>
-    <div class="ui-card-body">
-      <form method="POST" action="{{ url_for('cash_flow') }}" class="row g-3 align-items-end" id="cfReconcileForm">
-        <input type="hidden" name="action" value="save_reconciliation">
-        <input type="hidden" name="from_date" value="{{ from_date }}">
-        <input type="hidden" name="to_date" value="{{ to_date }}">
-        <input type="hidden" name="filter_type" value="{{ filter_type }}">
-        <input type="hidden" name="opening_balance" value="{{ opening_balance_input }}">
-
-        <div class="col-auto">
-          <label class="ui-label">Reconciliation Date</label>
-          <input type="date" name="adjustment_date" class="form-control form-control-sm" value="{{ adjustment_date_input }}" readonly>
-        </div>
-        <div class="col-auto">
-          <label class="ui-label">System Calculated Closing</label>
-          <div class="form-control form-control-sm font-monospace" style="background:#f8f9fa;cursor:default;font-weight:bold;">
-            Rs. {{ "{:,.0f}".format(closing_balance) }}
-          </div>
-        </div>
-        <div class="col-auto">
-          <label class="ui-label">Physical Cash Available <span style="color:red;font-weight:bold;">*</span></label>
-          <input type="number" step="0.01" name="physical_cash_available" class="form-control form-control-sm font-monospace"
-                 style="width:180px;font-weight:bold;"
-                 placeholder="0.00" value="{{ physical_cash_available if physical_cash_available is not none else '' }}" id="physical_cash_input">
-        </div>
-        <div class="col-auto">
-          <label class="ui-label">Difference (Counted − Expected)</label>
-          <div class="form-control form-control-sm font-monospace" style="background:#fff3cd;cursor:default;font-weight:bold;color:#856404;" id="difference_display">
-            Rs. 0
-          </div>
-        </div>
-        <div class="col-12">
-          <label class="ui-label">Reason / Explanation Note</label>
-          <input type="text" name="reconciliation_reason" class="form-control form-control-sm" value="{{ reconciliation_reason }}"
-                 placeholder="Explanation for difference (if any)">
-        </div>
-        <div class="col-auto">
-          <button type="submit" class="btn btn-success btn-sm fw-bold">
-            <i class="bi bi-save me-1"></i> Save Reconciliation
-          </button>
-          {% if show_delete_button %}
-          <button type="submit" name="action" value="delete" class="btn btn-danger btn-sm fw-bold">
-            <i class="bi bi-trash me-1"></i> Remove Reconciliation
-          </button>
-          {% endif %}
-        </div>
-      </form>
-    </div>
-  </details>
-
-  <!-- KPI SUMMARY GRID -->
-  <div class="ui-kpi-grid mb-4">
-    <div class="ui-tile" style="border-left:4px solid #6366f1;">
-      <div class="ui-tile-label">Opening Balance</div>
-      <div class="ui-tile-value" style="color:var(--ui-text);">Rs. {{ "{:,.0f}".format(opening_balance) }}</div>
-      <div class="ui-tile-sub">Start of period</div>
-    </div>
-    <div class="ui-tile" style="border-left:4px solid #16a34a;">
-      <div class="ui-tile-label">Total Received [ IN ]</div>
-      <div class="ui-tile-value" style="color:#16a34a;">Rs. {{ "{:,.0f}".format(total_cash_in) }}</div>
-      <div class="ui-tile-sub">{{ from_date }} — {{ to_date }}</div>
-    </div>
-    <div class="ui-tile" style="border-left:4px solid #dc2626;">
-      <div class="ui-tile-label">Total Spent [ OUT ]</div>
-      <div class="ui-tile-value" style="color:#dc2626;">Rs. {{ "{:,.0f}".format(total_cash_out) }}</div>
-      <div class="ui-tile-sub">{{ from_date }} — {{ to_date }}</div>
-    </div>
-    <div class="ui-tile" style="border-left:4px solid #0369a1;">
-      <div class="ui-tile-label">Closing Balance</div>
-      <div class="ui-tile-value" style="color:#0369a1;">Rs. {{ "{:,.0f}".format(closing_balance) }}</div>
-      <div class="ui-tile-sub">Opening + received − spent</div>
-    </div>
-    <div class="ui-tile" style="border-left:4px solid #0ea5e9;">
-      <div class="ui-tile-label">Transfers</div>
-      <div class="ui-tile-value" style="color:#0ea5e9;">Rs. {{ "{:,.0f}".format(total_transfer_in or 0) }}</div>
-      <div class="ui-tile-sub">Not income or expense</div>
-    </div>
-    <div class="ui-tile" style="border-left:4px solid #f97316;">
-      <div class="ui-tile-label">Physical Cash</div>
-      <div class="ui-tile-value" style="color:#f97316;">{% if physical_cash_available is not none %}Rs. {{ "{:,.0f}".format(physical_cash_available) }}{% else %}-{% endif %}</div>
-      <div class="ui-tile-sub">Reconciliation for {{ adjustment_date_input }}</div>
-    </div>
-    <div class="ui-tile" style="border-left:4px solid #0f766e;">
-      <div class="ui-tile-label">Next Day Opening</div>
-      <div class="ui-tile-value" style="color:#0f766e;">Rs. {{ "{:,.0f}".format(adjusted_closing_balance) }}</div>
-      <div class="ui-tile-sub">Carry-forward to next period</div>
-    </div>
-  </div>
-
   <!-- CASH FLOW TRANSACTIONS TABLE -->
   <div class="ui-card">
     <div class="ui-card-header d-flex justify-content-between align-items-center">
@@ -1100,60 +1338,111 @@
     </div>
   </div>
 
-  <!-- BREAKDOWN CARDS -->
-  <div class="row g-3 mt-3 d-print-none">
-    <div class="col-md-4">
-      <div class="ui-card h-100">
-        <div class="ui-card-header"><h6 class="mb-0 fw-bold"><i class="bi bi-tags me-1"></i> Breakdown by category</h6></div>
-        <div class="table-responsive">
-          <table class="ui-table">
-            <thead><tr><th>Category</th><th class="text-end">In</th><th class="text-end">Out</th></tr></thead>
-            <tbody>
-              {% for name, tot in (breakdown_cat or {}).items() %}
-              <tr><td>{{ name }}</td><td class="text-end text-success font-monospace">{{ "{:,.0f}".format(tot['in']) }}</td><td class="text-end text-danger font-monospace">{{ "{:,.0f}".format(tot['out']) }}</td></tr>
-              {% else %}
-              <tr><td colspan="3" class="ui-empty">No records</td></tr>
-              {% endfor %}
-            </tbody>
-          </table>
+  </section><!-- /transactions -->
+
+  <!-- PANEL: DAILY RECONCILIATIONS -->
+  <section class="cf-panel" id="cfPanel-reconcile" data-cf-panel="reconcile" hidden>
+
+  <!-- ADVANCED: TODAY OPENING OVERRIDE -->
+  <details class="ui-card mb-4 d-print-none">
+    <summary class="ui-card-header" style="cursor:pointer;">
+      <h5 class="mb-0 d-inline"><i class="bi bi-sliders me-1 text-info"></i> Advanced: today opening (display only)</h5>
+      <small class="text-muted ms-2">Does not mutate Accounts balances.</small>
+    </summary>
+    <div class="ui-card-body">
+      <form method="POST" action="{{ url_for('cash_flow') }}" class="row g-3 align-items-end">
+        <input type="hidden" name="action" value="set_opening_override">
+        <input type="hidden" name="from_date" value="{{ fresh_start_date }}">
+        <input type="hidden" name="to_date" value="{{ fresh_start_date }}">
+        <input type="hidden" name="filter_type" value="all">
+        <div class="col-auto">
+          <label class="ui-label">Date</label>
+          <input type="date" class="form-control form-control-sm" value="{{ fresh_start_date }}" readonly>
         </div>
-      </div>
-    </div>
-    <div class="col-md-4">
-      <div class="ui-card h-100">
-        <div class="ui-card-header"><h6 class="mb-0 fw-bold"><i class="bi bi-people me-1"></i> Breakdown by party</h6></div>
-        <div class="table-responsive">
-          <table class="ui-table">
-            <thead><tr><th>Party</th><th class="text-end">In</th><th class="text-end">Out</th></tr></thead>
-            <tbody>
-              {% for name, tot in (breakdown_party or {}).items() %}
-              <tr><td>{{ name }}</td><td class="text-end text-success font-monospace">{{ "{:,.0f}".format(tot['in']) }}</td><td class="text-end text-danger font-monospace">{{ "{:,.0f}".format(tot['out']) }}</td></tr>
-              {% else %}
-              <tr><td colspan="3" class="ui-empty">No records</td></tr>
-              {% endfor %}
-            </tbody>
-          </table>
+        <div class="col-auto">
+          <label class="ui-label">Opening Balance (Rs.)</label>
+          <input type="number" step="0.01" name="today_opening_override" class="form-control form-control-sm"
+                 style="width:180px;font-weight:bold;" value="{{ today_opening_override if today_opening_override is not none else 0 }}">
         </div>
-      </div>
-    </div>
-    <div class="col-md-4">
-      <div class="ui-card h-100">
-        <div class="ui-card-header"><h6 class="mb-0 fw-bold"><i class="bi bi-wallet2 me-1"></i> Breakdown by account</h6></div>
-        <div class="table-responsive">
-          <table class="ui-table">
-            <thead><tr><th>Account</th><th class="text-end">In</th><th class="text-end">Out</th></tr></thead>
-            <tbody>
-              {% for name, tot in (breakdown_account or {}).items() %}
-              <tr><td>{{ name }}</td><td class="text-end text-success font-monospace">{{ "{:,.0f}".format(tot['in']) }}</td><td class="text-end text-danger font-monospace">{{ "{:,.0f}".format(tot['out']) }}</td></tr>
-              {% else %}
-              <tr><td colspan="3" class="ui-empty">No records</td></tr>
-              {% endfor %}
-            </tbody>
-          </table>
+        <div class="col-auto">
+          <button type="submit" class="btn btn-primary btn-sm fw-bold">
+            <i class="bi bi-pencil-square me-1"></i> Override Today Opening
+          </button>
         </div>
-      </div>
+      </form>
+      {% if today_opening_override is not none %}
+      <form method="POST" action="{{ url_for('cash_flow') }}" class="mt-2">
+        <input type="hidden" name="action" value="clear_opening_override">
+        <button type="submit" class="btn btn-outline-secondary btn-sm fw-bold">
+          <i class="bi bi-x-circle me-1"></i> Back to Rs. 0 Opening
+        </button>
+      </form>
+      {% endif %}
+      <form method="POST" action="{{ url_for('cash_flow') }}" class="mt-2">
+        <input type="hidden" name="action" value="reset_fresh_start">
+        <button type="submit" class="btn btn-outline-danger btn-sm fw-bold">
+          <i class="bi bi-eye-slash me-1"></i> Hide Existing Entries Again
+        </button>
+      </form>
     </div>
-  </div>
+  </details>
+
+  <!-- ADVANCED: PHYSICAL CASH RECONCILIATION -->
+  <details class="ui-card mb-4 d-print-none">
+    <summary class="ui-card-header" style="cursor:pointer;">
+      <h5 class="mb-0 d-inline"><i class="bi bi-check2-circle me-1 text-success"></i> End-of-day physical cash count &amp; reconciliation</h5>
+      <small class="text-muted ms-2">Optional physical cash check. Difference = Counted − System Closing.</small>
+    </summary>
+    <div class="ui-card-body">
+      <form method="POST" action="{{ url_for('cash_flow') }}" class="row g-3 align-items-end" id="cfReconcileForm">
+        <input type="hidden" name="action" value="save_reconciliation">
+        <input type="hidden" name="from_date" value="{{ from_date }}">
+        <input type="hidden" name="to_date" value="{{ to_date }}">
+        <input type="hidden" name="filter_type" value="{{ filter_type }}">
+        <input type="hidden" name="opening_balance" value="{{ opening_balance_input }}">
+
+        <div class="col-auto">
+          <label class="ui-label">Reconciliation Date</label>
+          <input type="date" name="adjustment_date" class="form-control form-control-sm" value="{{ adjustment_date_input }}" readonly>
+        </div>
+        <div class="col-auto">
+          <label class="ui-label">System Calculated Closing</label>
+          <div class="form-control form-control-sm font-monospace" style="background:#f8f9fa;cursor:default;font-weight:bold;">
+            Rs. {{ "{:,.0f}".format(closing_balance) }}
+          </div>
+        </div>
+        <div class="col-auto">
+          <label class="ui-label">Physical Cash Available <span style="color:red;font-weight:bold;">*</span></label>
+          <input type="number" step="0.01" name="physical_cash_available" class="form-control form-control-sm font-monospace"
+                 style="width:180px;font-weight:bold;"
+                 placeholder="0.00" value="{{ physical_cash_available if physical_cash_available is not none else '' }}" id="physical_cash_input">
+        </div>
+        <div class="col-auto">
+          <label class="ui-label">Difference (Counted − Expected)</label>
+          <div class="form-control form-control-sm font-monospace" style="background:#fff3cd;cursor:default;font-weight:bold;color:#856404;" id="difference_display">
+            Rs. 0
+          </div>
+        </div>
+        <div class="col-12">
+          <label class="ui-label">Reason / Explanation Note</label>
+          <input type="text" name="reconciliation_reason" class="form-control form-control-sm" value="{{ reconciliation_reason }}"
+                 placeholder="Explanation for difference (if any)">
+        </div>
+        <div class="col-auto">
+          <button type="submit" class="btn btn-success btn-sm fw-bold">
+            <i class="bi bi-save me-1"></i> Save Reconciliation
+          </button>
+          {% if show_delete_button %}
+          <button type="submit" name="action" value="delete" class="btn btn-danger btn-sm fw-bold">
+            <i class="bi bi-trash me-1"></i> Remove Reconciliation
+          </button>
+          {% endif %}
+        </div>
+      </form>
+    </div>
+  </details>
+
+  </section><!-- /reconcile -->
 
 </div>
 
@@ -1676,6 +1965,7 @@
               subChip.classList.remove('d-none');
             }
           });
+          activateCfTab('transaction');
           form.scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
     });
@@ -1814,6 +2104,50 @@
     });
     physical.dispatchEvent(new Event('input'));
   }
+
+  // ---- Top-level section tabs ----
+  const CF_TAB_NAMES = ['financial', 'transaction', 'transactions', 'reconcile', 'master'];
+
+  function activateCfTab(name) {
+    if (CF_TAB_NAMES.indexOf(name) === -1) name = 'financial';
+    document.querySelectorAll('#cfTabs .cf-tab').forEach(function (t) {
+      const on = t.getAttribute('data-cf-tab') === name;
+      t.classList.toggle('active', on);
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    document.querySelectorAll('.cf-panel').forEach(function (p) {
+      p.hidden = p.getAttribute('data-cf-panel') !== name;
+    });
+    try { sessionStorage.setItem('cfActiveTab', name); } catch (_) {}
+    try { history.replaceState(null, '', '#tab-' + name); } catch (_) {}
+  }
+
+  document.querySelectorAll('#cfTabs .cf-tab').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      activateCfTab(btn.getAttribute('data-cf-tab'));
+    });
+  });
+
+  (function restoreCfTab() {
+    let name = null;
+    try {
+      const h = (location.hash || '').replace('#tab-', '');
+      if (CF_TAB_NAMES.indexOf(h) !== -1) name = h;
+      if (!name) name = sessionStorage.getItem('cfActiveTab');
+    } catch (_) {}
+    activateCfTab(name);
+  })();
+
+  // ---- Cash / Bank amount cards (expand sub-details) ----
+  document.querySelectorAll('[data-cf-collapse]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      const target = document.querySelector(btn.getAttribute('data-cf-collapse'));
+      const card = btn.closest('.cf-money-card');
+      if (!target || !card) return;
+      const open = card.classList.toggle('open');
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+  });
 
   syncType();
 })();

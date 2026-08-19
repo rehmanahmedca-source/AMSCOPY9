@@ -768,6 +768,31 @@ def cash_flow():
         return resp
 
     cash_accounts = _cf_company_accounts(active_only=True)
+    cash_accounts_list = [a for a in cash_accounts if (a.category or 'cash').lower() == 'cash']
+    bank_accounts_list = [a for a in cash_accounts if (a.category or '').lower() == 'bank']
+    cash_total = sum(_money_round(a.balance or 0) for a in cash_accounts_list)
+    bank_total = sum(_money_round(a.balance or 0) for a in bank_accounts_list)
+
+    # Per-account activity within the currently filtered rows (for cash/bank cards).
+    account_activity = {}
+    for r in display_rows:
+        if (r.get('status') or 'active') != 'active':
+            continue
+        rtype = r.get('type')
+        aid = r.get('account_id')
+        if aid:
+            act = account_activity.setdefault(aid, {'in': 0.0, 'out': 0.0, 'transfer_in': 0.0, 'transfer_out': 0.0})
+            if rtype == CF_DIR_IN:
+                act['in'] += float(r.get('cash_in') or 0)
+            elif rtype == CF_DIR_OUT:
+                act['out'] += float(r.get('cash_out') or 0)
+            elif rtype == CF_DIR_TRANSFER:
+                act['transfer_out'] += float(r.get('transfer_amount') or 0)
+        aid2 = r.get('account_to_id')
+        if aid2 and rtype == CF_DIR_TRANSFER:
+            act2 = account_activity.setdefault(aid2, {'in': 0.0, 'out': 0.0, 'transfer_in': 0.0, 'transfer_out': 0.0})
+            act2['transfer_in'] += float(r.get('transfer_amount') or 0)
+
     cf_categories = CashFlowCategory.query.order_by(CashFlowCategory.sort_order, CashFlowCategory.name).all()
     cf_subcategories = CashFlowSubcategory.query.order_by(CashFlowSubcategory.name).all()
     cf_parties = CashFlowParty.query.filter_by(is_active=True).order_by(CashFlowParty.name).all()
@@ -793,6 +818,11 @@ def cash_flow():
     common = dict(
         rows=display_rows,
         cash_accounts=cash_accounts,
+        cash_accounts_list=cash_accounts_list,
+        bank_accounts_list=bank_accounts_list,
+        cash_total=cash_total,
+        bank_total=bank_total,
+        account_activity=account_activity,
         account_options=account_options,
         cf_categories=cf_categories,
         cf_subcategories=cf_subcategories,

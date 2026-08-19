@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-08-17 15:11:41",
+  "captured_at": "2026-08-19 12:58:52",
   "counts": {
     "booking": 387,
     "client": 308,
@@ -8,9 +8,9 @@
     "pending_bill": 1534,
     "user": 7
   },
-  "db_path": "D:\\ams\\ams arena made\\99percent ams\\fbmams\\instance\\ahmed_cement.db",
-  "mtime": 1786961501.081616,
+  "db_path": "/home/user/ams99/instance/ahmed_cement.db",
+  "mtime": 1787125377.4833515,
   "schema_version": 2,
-  "size": 6402048,
+  "size": 6418432,
   "total": 9222
 }

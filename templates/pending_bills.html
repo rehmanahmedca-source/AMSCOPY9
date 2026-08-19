@@ -362,6 +362,14 @@
                         const billLink = modalEl.querySelector('.modal-body a.text-warning');
                         if (billId && billLink) checkBill(billLink.textContent.trim(), billId);
                     }, {once: true});
+                } else {
+                    // Show global loading overlay on save for lazy-loaded edit forms
+                    const editForm = modalEl.querySelector('form');
+                    if (editForm) {
+                        editForm.addEventListener('submit', function () {
+                            if (typeof window.showLoading === 'function') window.showLoading();
+                        });
+                    }
                 }
             },
         });

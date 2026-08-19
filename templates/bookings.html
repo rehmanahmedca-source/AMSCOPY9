@@ -563,28 +563,16 @@ function initializeLazyBookingModal(modalEl) {
     updatePrice(form);
 }
 
-async function loadEditBookingModal(url) {
-    const host = document.getElementById('lazyEditBookingModalHost');
-    if (!host || !url) return;
-    host.setAttribute('aria-busy', 'true');
-    try {
-        const response = await fetch(url, {headers: {'X-Requested-With': 'XMLHttpRequest'}});
-        if (!response.ok) throw new Error(`Unable to load edit form (${response.status})`);
-        host.innerHTML = await response.text();
-        const modalEl = host.querySelector('[id^="editBookingModal"]');
-        if (!modalEl) throw new Error('Edit form was not returned');
-        initializeLazyBookingModal(modalEl);
-        modalEl.addEventListener('hidden.bs.modal', () => {
-            bootstrap.Modal.getInstance(modalEl)?.dispose();
-            host.replaceChildren();
-        }, {once: true});
-        bootstrap.Modal.getOrCreateInstance(modalEl).show();
-    } catch (error) {
-        console.error(error);
-        window.alert('The edit form could not be loaded. Please try again.');
-    } finally {
-        host.removeAttribute('aria-busy');
-    }
+function loadEditBookingModal(url) {
+    AMSLazyModal.load({
+        hostId: 'lazyEditBookingModalHost',
+        url: url,
+        selector: '[id^="editBookingModal"]',
+        label: 'Loading booking form…',
+        onReady: function (modalEl) {
+            initializeLazyBookingModal(modalEl);
+        },
+    });
 }
 
 document.addEventListener('DOMContentLoaded', function() {

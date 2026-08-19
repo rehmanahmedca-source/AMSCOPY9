@@ -1,5 +1,15 @@
 {% extends "layout.html" %}
 {% block content %}
+{% macro perm_groups(groups, values, id_prefix='') %}
+{% for group_title, fields in groups %}
+<h6 class="small fw-bold text-warning text-uppercase mt-3 mb-1">{{ group_title }}</h6>
+<div class="row g-2">
+    {% for field, label in fields %}
+    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="{{ field }}" id="{{ id_prefix }}{{ field }}" {{ 'checked' if values.get(field) }}><label class="form-check-label" for="{{ id_prefix }}{{ field }}">{{ label }}</label></div></div>
+    {% endfor %}
+</div>
+{% endfor %}
+{% endmacro %}
 <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
         <h2 class="fw-bold text-warning mb-0">Settings</h2>
@@ -136,6 +146,8 @@
                                         {% if u.can_manage_suppliers %}<span class="badge bg-dark border border-secondary text-light">Suppliers</span>{% endif %}
                                         {% if u.can_manage_materials %}<span class="badge bg-dark border border-secondary text-light">Materials</span>{% endif %}
                                         {% if u.can_manage_delivery_persons %}<span class="badge bg-dark border border-secondary text-light">Delivery Persons</span>{% endif %}
+                                        {% if u.can_manage_accounts %}<span class="badge bg-dark border border-secondary text-success">Financial Accounts</span>{% endif %}
+                                        {% if u.can_view_cash_flow %}<span class="badge bg-dark border border-secondary text-success">Cash Flow</span>{% endif %}
                                         {% if u.can_access_settings %}<span class="badge bg-dark border border-secondary text-light">Settings</span>{% endif %}
                                         {% if u.restrict_backdated_edit %}<span class="badge bg-dark border border-secondary text-danger">Restrict Back-Date GRN Editing</span>{% endif %}
                                     </div>
@@ -159,6 +171,49 @@
                         </tbody>
                     </table>
                 </div>
+
+                {% if current_user.role == 'admin' %}
+                <div class="mt-3">
+                    <h6 class="small fw-bold text-warning text-uppercase mb-1"><i class="bi bi-grid-3x3-gap me-1"></i>Feature Access Matrix — who can use what</h6>
+                    <p class="x-small text-white-50 mb-2">Every module feature on the left, every user on the top. <span class="text-success">ALL</span> = Admin/Root always has it. Green check = access granted. Blank = blocked at login gate.</p>
+                    <div class="table-responsive" style="max-height: 420px; overflow:auto; border:1px solid rgba(255,255,255,.12); border-radius:8px;">
+                        <table class="table table-dark table-sm align-middle mb-0">
+                            <thead class="x-small text-uppercase text-white-50 sticky-top">
+                                <tr>
+                                    <th>Feature</th>
+                                    {% for u in users %}
+                                    <th class="text-center" title="{{ u.username }} ({{ u.role }})"><span class="{{ 'text-warning' if u.role in ('admin','root') else '' }}">{{ u.username }}</span></th>
+                                    {% endfor %}
+                                </tr>
+                            </thead>
+                            <tbody class="x-small">
+                                {% for group_title, fields in permission_groups %}
+                                <tr class="table-warning">
+                                    <td colspan="{{ users|length + 1 }}" class="fw-bold text-warning py-1">{{ group_title }}</td>
+                                </tr>
+                                {% for field, label in fields %}
+                                <tr class="border-secondary">
+                                    <td class="fw-bold">{{ label }} <span class="text-white-50">( {{ field }} )</span></td>
+                                    {% for u in users %}
+                                    <td class="text-center">
+                                        {% if u.role in ('admin', 'root') %}
+                                        <span class="badge bg-success" title="Admin/Root: full access">ALL</span>
+                                        {% elif user_perm_values[u.id].get(field) %}
+                                        <i class="bi bi-check-lg text-success"></i>
+                                        {% else %}
+                                        <span class="text-white-25">·</span>
+                                        {% endif %}
+                                    </td>
+                                    {% endfor %}
+                                </tr>
+                                {% endfor %}
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="x-small text-white-50 mt-2 mb-0"><i class="bi bi-info-circle me-1"></i>New in this release: <strong class="text-warning">Financial Accounts</strong> (Khata) and <strong class="text-warning">Cash Flow</strong> — both start <strong>OFF</strong> for every user until you tick them above.</p>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -499,29 +554,7 @@ document.addEventListener('DOMContentLoaded', function(){
                     </select>
                 </div>
                 <h6 class="small fw-bold text-warning text-uppercase mb-2">Module Access (Grouped)</h6>
-                <div class="row g-2">
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_view_dashboard" checked> <label>Dashboard</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_manage_grn" checked> <label>GRN (Receiving)</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_view_stock" checked> <label>Stock Summary</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_view_daily" checked> <label>Daily Breakdown</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_view_history" checked> <label>History & Bills</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_manage_bookings" checked> <label>Bookings</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_manage_payments" checked> <label>Payments</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_manage_sales" checked> <label>Sales</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_view_delivery_rent" checked> <label>Delivery Rent</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_view_client_ledger" checked> <label>Client Ledger</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_view_supplier_ledger" checked> <label>Supplier Ledger</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_view_decision_ledger" checked> <label>Decision Ledger</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_manage_pending_bills" checked> <label>Pending Bills</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_view_reports" checked> <label>Reports (Profit/Unpaid)</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_manage_notifications" checked> <label>Notifications</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_import_export"> <label>Import/Export</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_manage_clients"> <label>Manage Clients</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_manage_suppliers"> <label>Manage Suppliers</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_manage_materials"> <label>Manage Materials</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_manage_delivery_persons"> <label>Manage Delivery Persons</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_access_settings"> <label>Settings Access</label></div></div>
-                </div>
+                {{ perm_groups(permission_groups, default_permissions, 'addUser') }}
                 <div class="mt-3">
                     <div class="form-check small">
                         <input class="form-check-input" type="checkbox" name="restrict_backdated_edit" id="restrictBackdatedAdd">
@@ -558,29 +591,7 @@ document.addEventListener('DOMContentLoaded', function(){
                     <input type="text" name="password" class="form-control bg-dark text-white border-secondary" placeholder="Leave blank to keep existing password">
                 </div>
                 <h6 class="small fw-bold text-warning text-uppercase mb-2">Module Access (Grouped)</h6>
-                <div class="row g-2">
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_view_dashboard" {{ 'checked' if u.can_view_dashboard }}> <label>Dashboard</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_manage_grn" {{ 'checked' if u.can_manage_grn }}> <label>GRN (Receiving)</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_view_stock" {{ 'checked' if u.can_view_stock }}> <label>Stock Summary</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_view_daily" {{ 'checked' if u.can_view_daily }}> <label>Daily Breakdown</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_view_history" {{ 'checked' if u.can_view_history }}> <label>History & Bills</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_manage_bookings" {{ 'checked' if u.can_manage_bookings }}> <label>Bookings</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_manage_payments" {{ 'checked' if u.can_manage_payments }}> <label>Payments</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_manage_sales" {{ 'checked' if u.can_manage_sales }}> <label>Sales</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_view_delivery_rent" {{ 'checked' if u.can_view_delivery_rent }}> <label>Delivery Rent</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_view_client_ledger" {{ 'checked' if u.can_view_client_ledger }}> <label>Client Ledger</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_view_supplier_ledger" {{ 'checked' if u.can_view_supplier_ledger }}> <label>Supplier Ledger</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_view_decision_ledger" {{ 'checked' if u.can_view_decision_ledger }}> <label>Decision Ledger</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_manage_pending_bills" {{ 'checked' if u.can_manage_pending_bills }}> <label>Pending Bills</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_view_reports" {{ 'checked' if u.can_view_reports }}> <label>Reports (Profit/Unpaid)</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_manage_notifications" {{ 'checked' if u.can_manage_notifications }}> <label>Notifications</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_import_export" {{ 'checked' if u.can_import_export }}> <label>Import/Export</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_manage_clients" {{ 'checked' if u.can_manage_clients }}> <label>Manage Clients</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_manage_suppliers" {{ 'checked' if u.can_manage_suppliers }}> <label>Manage Suppliers</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_manage_materials" {{ 'checked' if u.can_manage_materials }}> <label>Manage Materials</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_manage_delivery_persons" {{ 'checked' if u.can_manage_delivery_persons }}> <label>Manage Delivery Persons</label></div></div>
-                    <div class="col-6"><div class="form-check small"><input class="form-check-input" type="checkbox" name="can_access_settings" {{ 'checked' if u.can_access_settings }}> <label>Settings Access</label></div></div>
-                </div>
+                {{ perm_groups(permission_groups, user_perm_values[u.id], 'editUser') }}
                 <div class="mt-3">
                     <div class="form-check small">
                         <input class="form-check-input" type="checkbox" name="restrict_backdated_edit" id="restrictBackdatedEdit{{ u.id }}" {{ 'checked' if u.restrict_backdated_edit }}>

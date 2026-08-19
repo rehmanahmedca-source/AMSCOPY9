@@ -36,13 +36,34 @@ def settings():
         recent_audit = AuditLog.query.order_by(AuditLog.timestamp.desc()).limit(20).all()
     except Exception:
         recent_audit = []
+    # Single source of truth for the user-role UI: feature groups + the
+    # permission value of every user, so the checkboxes and the access
+    # matrix always show exactly what exists and who has it.
+    from app.services.constants import (
+        EDITABLE_USER_PERMISSION_FIELDS,
+        PERMISSION_GROUPS,
+        USER_PERMISSION_DEFAULTS,
+    )
+    users_all = User.query.all()
+    user_perm_values = {
+        u.id: {field: bool(getattr(u, field, None)) for field in EDITABLE_USER_PERMISSION_FIELDS}
+        for u in users_all
+    }
+    default_permissions = {
+        field: bool(USER_PERMISSION_DEFAULTS.get(field, False))
+        for field in EDITABLE_USER_PERMISSION_FIELDS
+    }
     return render_template(
         'settings.html',
-        users=User.query.all(),
+        users=users_all,
         settings=settings_obj,
         categories=categories,
         recon_report=recon_report,
         recent_audit=recent_audit,
+        permission_groups=PERMISSION_GROUPS,
+        permission_fields=EDITABLE_USER_PERMISSION_FIELDS,
+        user_perm_values=user_perm_values,
+        default_permissions=default_permissions,
     )
 
 

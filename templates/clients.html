@@ -318,28 +318,14 @@ function addPageInput(containerId, value = '') {
     {% endfor %}
 </datalist>
 <script>
-async function loadClientModal(url, mode) {
-    const host = document.getElementById('lazyClientModalHost');
-    if (!host || !url) return;
-    host.setAttribute('aria-busy', 'true');
-    try {
-        const response = await fetch(url, {headers: {'X-Requested-With': 'XMLHttpRequest'}});
-        if (!response.ok) throw new Error(`Unable to load client form (${response.status})`);
-        host.innerHTML = await response.text();
-        const prefix = mode === 'transfer' ? 'transferCModal' : 'editCModal';
-        const modalEl = host.querySelector(`[id^="${prefix}"]`);
-        if (!modalEl) throw new Error('Client form was not returned');
-        modalEl.addEventListener('hidden.bs.modal', () => {
-            bootstrap.Modal.getInstance(modalEl)?.dispose();
-            host.replaceChildren();
-        }, {once: true});
-        bootstrap.Modal.getOrCreateInstance(modalEl).show();
-    } catch (error) {
-        console.error(error);
-        window.alert('The client form could not be loaded. Please try again.');
-    } finally {
-        host.removeAttribute('aria-busy');
-    }
+function loadClientModal(url, mode) {
+    const isTransfer = mode === 'transfer';
+    AMSLazyModal.load({
+        hostId: 'lazyClientModalHost',
+        url: url,
+        selector: `[id^="${isTransfer ? 'transferCModal' : 'editCModal'}"]`,
+        label: isTransfer ? 'Loading transfer form…' : 'Loading client form…',
+    });
 }
 
 document.addEventListener('click', function(event) {

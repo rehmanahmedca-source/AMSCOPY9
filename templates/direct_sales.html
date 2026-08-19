@@ -2823,29 +2823,17 @@ function initializeLazyEditSaleModal(modalEl) {
     updateSalePrice(form);
 }
 
-async function loadEditSaleModal(url, draft = null) {
-    const host = document.getElementById('lazyEditSaleModalHost');
-    if (!host || !url) return;
-    host.setAttribute('aria-busy', 'true');
-    try {
-        const response = await fetch(url, {headers: {'X-Requested-With': 'XMLHttpRequest'}});
-        if (!response.ok) throw new Error(`Unable to load edit form (${response.status})`);
-        host.innerHTML = await response.text();
-        const modalEl = host.querySelector('[id^="editSaleModal"]');
-        if (!modalEl) throw new Error('Edit form was not returned');
-        initializeLazyEditSaleModal(modalEl);
-        if (draft) applyEditSaleDraft(draft);
-        modalEl.addEventListener('hidden.bs.modal', () => {
-            bootstrap.Modal.getInstance(modalEl)?.dispose();
-            host.replaceChildren();
-        }, {once: true});
-        bootstrap.Modal.getOrCreateInstance(modalEl).show();
-    } catch (error) {
-        console.error(error);
-        window.alert('The edit form could not be loaded. Please try again.');
-    } finally {
-        host.removeAttribute('aria-busy');
-    }
+function loadEditSaleModal(url, draft = null) {
+    AMSLazyModal.load({
+        hostId: 'lazyEditSaleModalHost',
+        url: url,
+        selector: '[id^="editSaleModal"]',
+        label: 'Loading sale form…',
+        onReady: function (modalEl) {
+            initializeLazyEditSaleModal(modalEl);
+            if (draft) applyEditSaleDraft(draft);
+        },
+    });
 }
 
 document.addEventListener('DOMContentLoaded', function() {

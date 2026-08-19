@@ -528,8 +528,9 @@ function attachListeners(row) {
         materialInput.addEventListener('input', () => filterBookingMaterialCombobox(materialInput));
     }
 
+    // Null-safe: only attach listeners when inputs are present
     [rateInput, qtyInput].forEach(el => {
-        el.addEventListener('input', () => updatePrice(row.closest('form')));
+        if (el) el.addEventListener('input', () => updatePrice(row.closest('form')));
     });
 }
 
@@ -546,6 +547,7 @@ function updateRowTotal(row) {
 }
 
 function updatePrice(form) {
+    if (!form) return;
     let total = 0;
     form.querySelectorAll('.compact-item-row').forEach(row => {
         total += updateRowTotal(row);
@@ -561,6 +563,25 @@ function initializeLazyBookingModal(modalEl) {
     if (!form) return;
     form.querySelectorAll('.compact-item-row').forEach(row => attachListeners(row));
     updatePrice(form);
+    // Show global loading overlay on save for lazy-loaded forms (not caught by layout.html handler)
+    form.addEventListener('submit', function () {
+        if (typeof window.showLoading === 'function') window.showLoading();
+    });
+    // Account filter for payment method
+    const methodSel = form.querySelector('.booking-pay-method');
+    const accSel = form.querySelector('.booking-pay-account');
+    if (methodSel && accSel) {
+        const filterAcc = () => {
+            const want = (methodSel.value || 'Cash').toLowerCase() === 'bank' ? 'bank' : 'cash';
+            Array.from(accSel.options).forEach((opt, idx) => {
+                if (idx === 0) return;
+                const cat = (opt.dataset.cat || '').toLowerCase();
+                opt.hidden = cat && cat !== want;
+            });
+        };
+        methodSel.addEventListener('change', filterAcc);
+        filterAcc();
+    }
 }
 
 function loadEditBookingModal(url) {

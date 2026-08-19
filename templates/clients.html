@@ -325,6 +325,15 @@ function loadClientModal(url, mode) {
         url: url,
         selector: `[id^="${isTransfer ? 'transferCModal' : 'editCModal'}"]`,
         label: isTransfer ? 'Loading transfer form…' : 'Loading client form…',
+        onReady: function (modalEl) {
+            // Show global loading overlay on save for lazy-loaded forms
+            const editForm = modalEl.querySelector('form');
+            if (editForm) {
+                editForm.addEventListener('submit', function () {
+                    if (typeof window.showLoading === 'function') window.showLoading();
+                });
+            }
+        },
     });
 }
 

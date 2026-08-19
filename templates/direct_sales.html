@@ -1855,6 +1855,7 @@ function filterAddSaleClientsByCategory() {
 function checkItemBookingStatus(row) {
     const materialInput = row.querySelector('.price-trigger');
     const rateInput = row.querySelector('.rate-input');
+    const qtyInputEl = row.querySelector('.qty-input');
     const statusBadge = row.querySelector('.item-status-badge');
     const rateCell = row.querySelector('.rate-cell');
     const reservedBadge = row.querySelector('.reserved-rate-badge');
@@ -1862,7 +1863,7 @@ function checkItemBookingStatus(row) {
     
     // Find category input in the same form
     const form = row.closest('form');
-    if (!materialInput || !rateInput) return;
+    if (!materialInput || !rateInput || !qtyInputEl) return;  // safety guard
     const ignoreBooking = !!(row.querySelector('.ignore-booking-item') && row.querySelector('.ignore-booking-item').checked);
     
     const material = materialInput.value;
@@ -1871,7 +1872,7 @@ function checkItemBookingStatus(row) {
     const bookingRate = toNum(currentClientBookingRates[matKey]);
     // Check if material is booked for this client
     const balance = toNum(currentClientBookings[matKey]);
-    const currentQty = toNum(row.querySelector('.qty-input').value);
+    const currentQty = toNum(qtyInputEl.value);
 
     if (ignoreHidden) ignoreHidden.value = ignoreBooking ? '1' : '0';
     if (ignoreBooking) {
@@ -1967,10 +1968,11 @@ function attachSaleListeners(row) {
         }
     }
 
+    // Null-safe: only attach if both inputs exist
     [rateInput, qtyInput].forEach(el => {
-        el.addEventListener('input', () => updateSalePrice(row.closest('form')));
+        if (el) el.addEventListener('input', () => updateSalePrice(row.closest('form')));
     });
-    qtyInput.addEventListener('input', () => checkItemBookingStatus(row));
+    if (qtyInput) qtyInput.addEventListener('input', () => checkItemBookingStatus(row));
     bindManualInputBehavior(row);
 }
 
@@ -1990,6 +1992,7 @@ function applyIgnoreBookingUI(form) {
 }
 
 function updateSalePrice(form, source) {
+    if (!form) return;
     let total = 0;
     let hasChargeable = false;
     // Clone balance map to track usage across rows (in case multiple rows use same material)
@@ -2001,6 +2004,7 @@ function updateSalePrice(form, source) {
         const qtyInput = row.querySelector('.qty-input');
         const materialInput = row.querySelector('.price-trigger');
 
+        if (!rateInput || !qtyInput) return;  // skip rows without price inputs (safety guard)
         const price = toNum(rateInput.value);
         const qty = toNum(qtyInput.value);
         const material = materialInput ? materialInput.value : '';
@@ -2397,6 +2401,9 @@ function attachFormListeners(form) {
                     }
                     form.dataset.finalSubmit = '1';
                     setSubmitting(false);  // unlock so the final pass can submit
+                    // Show global loading overlay for lazy-loaded forms that don't
+                    // have the layout.html submit handler attached to them.
+                    if (typeof window.showLoading === 'function') window.showLoading();
                     form.requestSubmit();
                 } catch (err) {
                     console.error('Sale precheck failed:', err);
@@ -2490,7 +2497,11 @@ function validateSaleFormBeforeSubmit(form) {
             issues.push(`Row ${idx + 1}: Material is required.`);
             return;
         }
-        if (!(knownMaterialNames.has(product) || knownMaterialCodes.has(product))) {
+        // Allow existing sale materials even if deactivated/renamed — check by ID hidden input too
+        const matIdInput = row.querySelector('.material-id-input');
+        const matIdVal = (matIdInput && matIdInput.value) ? matIdInput.value.trim() : '';
+        const isKnownByName = knownMaterialNames.has(product) || knownMaterialNames.has(product.toLowerCase()) || knownMaterialCodes.has(product) || knownMaterialCodes.has(product.toLowerCase());
+        if (!isKnownByName && !matIdVal) {
             issues.push(`Row ${idx + 1}: Select a valid material from list.`);
             return;
         }
@@ -2501,7 +2512,9 @@ function validateSaleFormBeforeSubmit(form) {
         validRows += 1;
         totalMaterialQty += qty;
         const alt = (row.querySelector('[name="alternate_material[]"]')?.value || '').trim();
-        if (alt && !(knownMaterialNames.has(alt) || knownMaterialCodes.has(alt))) {
+        const altMatIdInput = row.querySelector('.alt-material-id-input');
+        const altMatId = (altMatIdInput && altMatIdInput.value) ? altMatIdInput.value.trim() : '';
+        if (alt && !altMatId && !(knownMaterialNames.has(alt) || knownMaterialNames.has(alt.toLowerCase()) || knownMaterialCodes.has(alt) || knownMaterialCodes.has(alt.toLowerCase()))) {
             issues.push(`Row ${idx + 1}: Select a valid alternate material from list.`);
         }
 

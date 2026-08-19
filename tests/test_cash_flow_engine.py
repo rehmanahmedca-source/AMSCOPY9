@@ -227,6 +227,49 @@ def test_cash_flow_engine_rules():
         assert 'Workshop' not in spent_cats
         assert [s.name for s in subcategories_for_category(cat.id)] == ['Parts']
 
+        from app.services.cash_flow_svc import (
+            delete_cf_category,
+            delete_cf_subcategory,
+            parse_physical_cash_amount,
+            compute_physical_cash_difference,
+        )
+
+        unused, _ = save_cf_category('Disposable Box', 'both')
+        unused_sub, _ = save_cf_subcategory(unused.id, 'Disposable Sub')
+        db.session.commit()
+        delete_cf_subcategory(unused_sub.id)
+        db.session.commit()
+        assert CashFlowSubcategory.query.get(unused_sub.id) is None
+        delete_cf_category(unused.id)
+        db.session.commit()
+        assert CashFlowCategory.query.get(unused.id) is None
+
+        try:
+            delete_cf_category(cat.id)
+            assert False, 'historically used category must not hard-delete'
+        except ValueError as exc:
+            assert 'cannot be deleted' in str(exc).lower() or 'historical' in str(exc).lower()
+        db.session.rollback()
+        assert CashFlowCategory.query.get(cat.id) is not None
+        assert CashFlowEntry.query.get(spent.id) is not None
+        assert CashFlowEntry.query.get(spent.id).category_id == cat.id
+
+        assert parse_physical_cash_amount('0') == 0.0
+        assert parse_physical_cash_amount('98,500') == 98500.0
+        try:
+            parse_physical_cash_amount('')
+            assert False
+        except ValueError:
+            pass
+        try:
+            parse_physical_cash_amount('abc')
+            assert False
+        except ValueError:
+            pass
+        assert compute_physical_cash_difference(98500, 100000) == -1500
+        assert compute_physical_cash_difference(102000, 100000) == 2000
+        assert compute_physical_cash_difference(100000, 100000) == 0
+
 
 def test_system_sale_and_transfer_rows_not_double_counted():
     with app.app_context():

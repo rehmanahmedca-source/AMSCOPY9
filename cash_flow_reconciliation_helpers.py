@@ -28,7 +28,7 @@ def create_reconciliation(adjustment_date, calculated_closing, physical_cash, re
     Returns:
         CashFlowDifferenceAdjustment object
     """
-    difference = calculated_closing - physical_cash
+    difference = physical_cash - calculated_closing
     
     reconciliation = CashFlowDifferenceAdjustment(
         adjustment_date=adjustment_date,
@@ -84,7 +84,7 @@ def update_reconciliation(reconciliation_id, physical_cash, reason='', edited_by
     old_reason = reconciliation.reason
     
     # Update values
-    new_difference = reconciliation.calculated_closing - physical_cash
+    new_difference = physical_cash - reconciliation.calculated_closing
     reconciliation.physical_cash_available = physical_cash
     reconciliation.difference = new_difference
     reconciliation.reason = reason

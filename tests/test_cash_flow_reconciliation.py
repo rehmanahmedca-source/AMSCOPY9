@@ -72,16 +72,16 @@ class TestPhysicalCashReconciliation(unittest.TestCase):
         assert rec.calculated_closing == calculated_closing
         assert rec.reason == reason
         
-        # Verify difference calculated correctly
-        assert rec.difference == calculated_closing - physical_cash
-        assert rec.difference == 20000.0
+        # Verify difference calculated correctly: physical - system
+        assert rec.difference == physical_cash - calculated_closing
+        assert rec.difference == -20000.0
         
         # Verify audit trail created
         audit = get_reconciliation_history(rec_date)
         assert len(audit) == 1
         assert audit[0].change_type == 'CREATE'
         assert audit[0].new_physical_cash == physical_cash
-        assert audit[0].new_difference == 20000.0
+        assert audit[0].new_difference == -20000.0
 
     def test_create_with_negative_difference(self):
         """Test reconciliation where physical cash exceeds calculated closing."""
@@ -97,8 +97,8 @@ class TestPhysicalCashReconciliation(unittest.TestCase):
             created_by='cashier'
         )
 
-        # Difference should be negative (extra cash in drawer)
-        assert rec.difference == -30000.0
+        # Difference should be positive (extra cash in drawer)
+        assert rec.difference == 30000.0
         assert rec.physical_cash_available > rec.calculated_closing
 
     # =======================
@@ -128,7 +128,7 @@ class TestPhysicalCashReconciliation(unittest.TestCase):
         # Verify updates
         assert updated_rec.physical_cash_available == 48000.0
         assert updated_rec.old_physical_cash == 45000.0
-        assert updated_rec.difference == 2000.0  # 50000 - 48000
+        assert updated_rec.difference == -2000.0  # 48000 - 50000
         assert updated_rec.edit_count == 2
         
         # Verify audit trail
@@ -313,12 +313,12 @@ class TestPhysicalCashReconciliation(unittest.TestCase):
     # TEST 6: Data Validation
     # =======================
     def test_difference_always_calculated_correctly(self):
-        """Test that difference = calculated_closing - physical_cash always."""
+        """Test that difference = physical_cash - calculated_closing always."""
         test_cases = [
             (100000.0, 100000.0, 0.0),  # Equal
-            (100000.0, 95000.0, 5000.0),  # Shortage
-            (100000.0, 105000.0, -5000.0),  # Excess
-            (1000000.0, 999999.99, 0.01),  # Decimal
+            (100000.0, 95000.0, -5000.0),  # Shortage
+            (100000.0, 105000.0, 5000.0),  # Excess
+            (1000000.0, 999999.99, -0.01),  # Decimal
         ]
         
         for i, (calculated, physical, expected_diff) in enumerate(test_cases):
@@ -342,7 +342,7 @@ class TestPhysicalCashReconciliation(unittest.TestCase):
         )
         
         assert rec.physical_cash_available == 0.0
-        assert rec.difference == 50000.0
+        assert rec.difference == -50000.0
 
     def test_large_amounts_handled_correctly(self):
         """Test large rupee amounts."""
@@ -356,7 +356,7 @@ class TestPhysicalCashReconciliation(unittest.TestCase):
         )
         
         assert rec.physical_cash_available == large_amount * 0.98
-        assert abs(rec.difference - (large_amount * 0.02)) < 1.0
+        assert abs(rec.difference - (large_amount * -0.02)) < 1.0
 
 
 class TestReconciliationEdgeCases(unittest.TestCase):

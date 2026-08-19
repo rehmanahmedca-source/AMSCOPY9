@@ -97,7 +97,7 @@ class CashFlowDifferenceAdjustment(db.Model):
     # NEW FIELDS: Physical Cash Reconciliation Workflow
     physical_cash_available = db.Column(db.Float)  # NEW: actual cash in drawer (primary input)
     calculated_closing = db.Column(db.Float)  # NEW: system-calculated closing balance
-    difference = db.Column(db.Float)  # NEW: calculated_closing - physical_cash_available (auto-computed)
+    difference = db.Column(db.Float)  # NEW: physical_cash_available - calculated_closing (auto-computed)
     reason = db.Column(db.String(500))  # NEW: explanation for discrepancy
     # Audit trail fields
     old_physical_cash = db.Column(db.Float)  # Previous physical_cash when edited

@@ -783,8 +783,25 @@ def _ensure_default_admin():
     logging.getLogger("app").info("Created default admin user %r", username)
 
 
+def _release_stale_system_locks():
+    """A previous crash must not leave wipe/import mutexes held forever."""
+    try:
+        db.session.execute(text(
+            "UPDATE system_lock SET status='unlocked', owner=NULL, "
+            "acquired_at=NULL, note='Released on startup' "
+            "WHERE status='locked'"
+        ))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+
 def _bootstrap_database():
     db.create_all()
+    try:
+        _release_stale_system_locks()
+    except Exception:
+        db.session.rollback()
     try:
         _ensure_user_password_column()
     except Exception:

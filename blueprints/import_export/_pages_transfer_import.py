@@ -11,6 +11,28 @@ def _wants_import_json():
 
 
 def _import_result_payload(ok, headline, report, extra=None):
+    report = report or {}
+    # Slim row-level issue details for the finish dialog.  Capped and truncated
+    # so a bad workbook cannot produce a multi-megabyte JSON response; the full
+    # list stays available in the downloadable issue report.
+    issue_rows = []
+    for issue in (report.get('issue_rows') or [])[:100]:
+        slim = {
+            'table': str(issue.get('table') or '')[:80],
+            'sheet_row': '' if issue.get('sheet_row') in (None, '') else str(issue.get('sheet_row'))[:12],
+            'status': str(issue.get('status') or '')[:40],
+            'reason': str(issue.get('reason') or '')[:300],
+            'primary_key': str(issue.get('primary_key') or '')[:200],
+            'label': str(issue.get('label') or '')[:200],
+        }
+        row_json = str(issue.get('row_json') or '')
+        if row_json:
+            slim['row_json'] = row_json[:300]
+        issue_rows.append(slim)
+    issue_rows_count = int(report.get('issue_rows_count') or 0)
+    if not issue_rows_count:
+        issue_rows_count = len(report.get('issue_rows') or 0)
+    error_details = [str(item)[:300] for item in (report.get('error_details') or [])[:100]]
     payload = {
         'ok': bool(ok),
         'status': (report or {}).get('status') or ('ok' if ok else 'failed'),
@@ -24,6 +46,9 @@ def _import_result_payload(ok, headline, report, extra=None):
         'tables': (report or {}).get('tables'),
         'table_results': (report or {}).get('table_results') or [],
         'users': (report or {}).get('users') or [],
+        'issue_rows': issue_rows,
+        'issue_rows_count': issue_rows_count,
+        'error_details': error_details,
     }
     if extra:
         payload.update(extra)

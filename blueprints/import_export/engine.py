@@ -659,6 +659,10 @@ def _run_full_raw_import_bytes(file_bytes, scope_ctx, mode, source_file_name, al
         })
         discard_import_artifacts()
     purge_expired_failed_artifacts()
+    # Row-level issue details (Excel row, reason, key, label) so the UI can
+    # tell the user exactly which rows/entries were missed, not just the counts.
+    report['issue_rows'] = issue_rows
+    report['issue_rows_count'] = len(issue_rows)
     return report, report_name
 
 

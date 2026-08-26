@@ -374,9 +374,13 @@
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
+                <div id="taskResultBanner" class="d-none mb-3 p-3 rounded border"></div>
                 <p class="mb-2 fw-bold" id="taskResultHeadline">Operation completed successfully.</p>
                 <div class="small text-white-50" id="taskResultDetails"></div>
+                <div id="taskResultStats" class="row g-2 mt-2" style="display:none;"></div>
+                <div id="taskResultMissed" class="mt-3" style="display:none;"></div>
                 <div id="taskResultTables" class="mt-3" style="display:none;"></div>
+                <div id="taskResultActions" class="mt-3" style="display:none;"></div>
             </div>
             <div class="modal-footer border-secondary py-2">
                 <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Close</button>
@@ -803,21 +807,14 @@ function toggleNavGroup(groupId, btn) {
             }
         });
     }
-    function fillJobReport(title, summary, tableRows, people, keepOpen) {
-        const wrap = document.getElementById('taskProgressReport');
-        const body = document.getElementById('taskProgressReportBody');
-        const sum = document.getElementById('taskProgressReportSummary');
-        const ttl = document.getElementById('taskProgressReportTitle');
-        if (!wrap || !body) return;
-        if (ttl) ttl.textContent = title || 'Completed — table report';
-        if (sum) sum.textContent = summary || '';
-        const statusBadge = (st) => {
-            const s = String(st || 'ok').toLowerCase();
-            const cls = s === 'ok' || s === 'exported' ? 'bg-success'
-                : (s === 'failed' ? 'bg-danger'
-                    : (s === 'skipped' || s === 'unavailable' ? 'bg-secondary' : 'bg-warning text-dark'));
-            return '<span class="badge ' + cls + '">' + escapeReportHtml(s) + '</span>';
-        };
+    function importStatusBadge(st) {
+        const s = String(st || 'ok').toLowerCase();
+        const cls = s === 'ok' || s === 'exported' ? 'bg-success'
+            : (s === 'failed' ? 'bg-danger'
+                : (s === 'skipped' || s === 'unavailable' ? 'bg-secondary' : 'bg-warning text-dark'));
+        return '<span class="badge ' + cls + '">' + escapeReportHtml(s) + '</span>';
+    }
+    function renderTableReportHtml(tableRows, emptyText) {
         let html = '';
         if (tableRows && tableRows.length) {
             const orderedRows = tableRows.slice().sort((a, b) => {
@@ -828,15 +825,26 @@ function toggleNavGroup(groupId, btn) {
             html += '<div class="table-responsive"><table class="table table-dark table-sm align-middle mb-0">';
             html += '<thead><tr><th>Table / setting</th><th>Status</th><th>In</th><th>Upd</th><th>Skip</th><th>Fail</th><th>Note</th></tr></thead><tbody>';
             orderedRows.forEach((r) => {
-                html += '<tr><td class="fw-bold">' + escapeReportHtml(r.name || '') + '</td><td>' + statusBadge(r.status)
+                html += '<tr><td class="fw-bold">' + escapeReportHtml(r.name || '') + '</td><td>' + importStatusBadge(r.status)
                     + '</td><td>' + escapeReportHtml(r.inserted || r.rows || 0) + '</td><td>' + escapeReportHtml(r.updated || 0)
                     + '</td><td>' + escapeReportHtml(r.skipped || 0) + '</td><td>' + escapeReportHtml(r.failed || 0)
                     + '</td><td class="text-white-50 small">' + escapeReportHtml(r.error || '') + '</td></tr>';
             });
             html += '</tbody></table></div>';
         } else {
-            html += '<div class="text-white-50 small">No per-table breakdown was returned. Check the summary above.</div>';
+            html += '<div class="text-white-50 small">' + (emptyText || 'No per-table breakdown was returned. Check the summary above.') + '</div>';
         }
+        return html;
+    }
+    function fillJobReport(title, summary, tableRows, people, keepOpen) {
+        const wrap = document.getElementById('taskProgressReport');
+        const body = document.getElementById('taskProgressReportBody');
+        const sum = document.getElementById('taskProgressReportSummary');
+        const ttl = document.getElementById('taskProgressReportTitle');
+        if (!wrap || !body) return;
+        if (ttl) ttl.textContent = title || 'Completed — table report';
+        if (sum) sum.textContent = summary || '';
+        let html = renderTableReportHtml(tableRows);
         if (people && people.length) {
             html += '<div class="fw-bold text-warning mt-3 mb-1">Users / roles</div><ul class="small mb-0">';
             people.forEach((u) => {
@@ -879,54 +887,270 @@ function toggleNavGroup(groupId, btn) {
             const ctype = (res.headers.get('content-type') || '').toLowerCase();
             if (ctype.includes('application/json')) {
                 const data = await res.json();
-                const rep = (data && typeof data === 'object' && data.report && typeof data.report === 'object') ? data.report : (data || {});
-                const ok = data && data.ok !== false && data.success !== false;
-                const rows = data && data.table_results ? data.table_results : (rep.table_results || []);
-                const people = data && data.users ? data.users : (rep.users || []);
-                const inserted = (data && data.inserted != null) ? data.inserted : (rep.inserted != null ? rep.inserted : (rep.imported != null ? rep.imported : 0));
-                const updated = (data && data.updated != null) ? data.updated : (rep.updated != null ? rep.updated : 0);
-                const skipped = (data && data.skipped != null) ? data.skipped : (rep.skipped != null ? rep.skipped : 0);
-                const failed = (data && data.failed != null) ? data.failed : (rep.failed != null ? rep.failed : (rep.errors || 0));
-                const warnings = (data && data.warnings != null) ? data.warnings : (rep.warnings || 0);
-                const reportStatus = String((data && data.status) || rep.status || '').toLowerCase();
-                const headline = (data && data.headline)
-                    || (data && data.error ? 'Import failed: ' + data.error : '')
-                    || ('Inserted ' + inserted + ', updated ' + updated + ', skipped ' + skipped + ', failed ' + failed);
-                const hasProblems = !ok || Number(failed) > 0 || ['failed', 'partial'].includes(reportStatus);
-                const hasWarnings = Number(warnings) > 0 || reportStatus === 'warning';
-                setTaskProgress(100, hasProblems ? 'Completed with problems' : (hasWarnings ? 'Completed with warnings' : 'Completed'));
-                fillJobReport(
-                    hasProblems ? 'Import finished with problems' : (hasWarnings ? 'Import completed with warnings' : 'Import completed — table report'),
-                    headline,
-                    rows,
-                    people,
-                    true
-                );
+                showImportResult(data);
                 return;
             }
             if (!res.ok) {
                 const raw = await res.text();
                 const flashMsg = extractFlashMessage(raw);
-                fillJobReport('Import failed', flashMsg || extractErrorText(raw), [], [], true);
+                const reason = flashMsg || extractErrorText(raw) || 'Import failed.';
+                showImportResult({ ok: false, status: 'failed', headline: reason, error: reason });
                 return;
             }
             // 2xx but not JSON: the server redirected to a page instead of a report.
             // The flash on that page (if any) carries the real outcome.
             const raw = await res.text();
             const flashMsg = extractFlashMessage(raw);
-            fillJobReport(
-                'Import not confirmed',
-                flashMsg || 'The server responded with a page instead of an import report. Reload to verify whether any data was imported.',
-                [],
-                [],
-                true
-            );
+            showImportResult({
+                ok: false,
+                headline: 'Import not confirmed',
+                details: flashMsg || 'The server responded with a page instead of an import report. Reload to verify whether any data was imported.'
+            });
         } catch (err) {
             setTaskProgress(100, 'Failed');
-            fillJobReport('Import failed', (err && err.message) || 'Network error', [], [], true);
+            showImportResult({ ok: false, status: 'failed', headline: 'Import failed', details: (err && err.message) || 'Network error' });
         }
     }
     window.runImportAction = runImportAction;
+
+    // Humanize the compact issue codes the importer records per row.
+    function importIssueText(issue) {
+        let statusLabel = String(issue.status || 'issue').replace(/_/g, ' ');
+        if (statusLabel === 'skipped not selected') statusLabel = 'not selected';
+        else if (statusLabel === 'unavailable') statusLabel = 'not imported';
+        let reason = String(issue.reason || '').trim();
+        if (reason === 'empty_row') reason = 'Empty row';
+        else if (reason === 'duplicate_primary_key') reason = 'Duplicate — already exists';
+        else if (reason === 'protected_root_user') reason = 'Protected root user (kept existing)';
+        else if (reason === 'missing_username') reason = 'Missing username';
+        if (issue.primary_key && !String(reason).toLowerCase().includes(String(issue.primary_key).toLowerCase())) {
+            reason = reason ? reason + ' [' + issue.primary_key + ']' : String(issue.primary_key);
+        }
+        return { statusLabel, reason: reason || statusLabel, entry: issue.label || issue.primary_key || '' };
+    }
+    const IMPORT_ISSUE_RANK = { failed: 0, skipped: 1, unavailable: 2, warning: 3, skipped_not_selected: 4 };
+    function renderMissedEntriesHtml(issueRows, errorDetails, issueRowsCount) {
+        // "skipped_not_selected" sheets were intentionally left untouched —
+        // not missed data. The per-table breakdown already explains them.
+        const allRows = (issueRows || []).slice();
+        const keptCount = allRows.length - allRows.filter((r) => String(r.status || '').toLowerCase() === 'skipped_not_selected').length;
+        const rows = allRows.filter((r) => String(r.status || '').toLowerCase() !== 'skipped_not_selected');
+        const rank = (r) => {
+            const s = String(r.status || '').toLowerCase();
+            return IMPORT_ISSUE_RANK[s] != null ? IMPORT_ISSUE_RANK[s] : 5;
+        };
+        rows.sort((a, b) => rank(a) - rank(b));
+        const details = (errorDetails || []).filter((d) => String(d || '').trim());
+        if (!rows.length && !details.length) return '';
+        const shown = rows.slice(0, 100);
+        const truncatedByServer = Math.max(0, (issueRowsCount != null ? Number(issueRowsCount) : 0) - allRows.length);
+        const extra = truncatedByServer + Math.max(0, keptCount - shown.length);
+        let html = '<div class="fw-bold text-warning mb-1"><i class="bi bi-exclamation-triangle me-1"></i>Missed / not imported rows &amp; entries</div>';
+        if (shown.length) {
+            html += '<div class="table-responsive" style="max-height:220px; overflow-y:auto;"><table class="table table-dark table-sm align-middle mb-0">';
+            html += '<thead><tr><th>Sheet / table</th><th>Excel row</th><th>Status</th><th>Reason</th><th>Entry</th></tr></thead><tbody>';
+            shown.forEach((issue) => {
+                const t = importIssueText(issue);
+                const rowNo = (issue.sheet_row === '' || issue.sheet_row == null) ? '—' : ('Row ' + issue.sheet_row);
+                const badgeCls = t.statusLabel === 'failed' ? 'bg-danger' : (t.statusLabel === 'not imported' ? 'bg-secondary' : 'bg-warning text-dark');
+                html += '<tr><td class="fw-bold">' + escapeReportHtml(issue.table || '') + '</td><td>' + escapeReportHtml(rowNo)
+                    + '</td><td><span class="badge ' + badgeCls + '">' + escapeReportHtml(t.statusLabel) + '</span></td>'
+                    + '<td class="small">' + escapeReportHtml(t.reason)
+                    + '</td><td class="text-white-50 small">' + escapeReportHtml(t.entry) + '</td></tr>';
+            });
+            html += '</tbody></table></div>';
+        }
+        if (details.length) {
+            html += '<ul class="small mb-0 ps-3">';
+            details.slice(0, 100).forEach((d) => { html += '<li class="text-white-50">' + escapeReportHtml(d) + '</li>'; });
+            html += '</ul>';
+        }
+        if (extra > 0) {
+            html += '<div class="small text-warning mt-1">… ' + extra + ' more — download the full issue report below.</div>';
+        }
+        return html;
+    }
+    function renderImportStatsHtml(stats) {
+        const cells = [
+            ['Inserted', stats.inserted, 'text-success'],
+            ['Updated', stats.updated, 'text-info'],
+            ['Skipped', stats.skipped, stats.skipped ? 'text-warning' : 'text-white'],
+            ['Failed', stats.failed, stats.failed ? 'text-danger' : 'text-white'],
+            ['Warnings', stats.warnings, stats.warnings ? 'text-warning' : 'text-white']
+        ];
+        if (stats.tables != null && stats.tables !== '') cells.push(['Tables', stats.tables, 'text-white']);
+        let html = '';
+        cells.forEach((c) => {
+            html += '<div class="col-6 col-sm-4 col-md-2 text-center border border-secondary rounded p-2">'
+                + '<span class="d-block text-white-50" style="font-size:0.72rem;">' + escapeReportHtml(c[0]) + '</span>'
+                + '<strong class="' + c[2] + '">' + escapeReportHtml(c[1]) + '</strong></div>';
+        });
+        return html;
+    }
+    // Finish dialog: opens when the import completes (the progress dialog
+    // closes first). Green = 100% (nothing missed), amber = partial (rows
+    // missed — listed below), red = failed.
+    function showImportResult(data) {
+        data = (data && typeof data === 'object') ? data : {};
+        if (typeof closeTaskProgressNow === 'function') closeTaskProgressNow();
+        if (typeof hideLoading === 'function') hideLoading();
+        const modal = ensureTaskResultModal();
+        if (!modal) return;
+
+        const rep = (data.report && typeof data.report === 'object') ? data.report : data;
+        const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+        // Two payload shapes exist: flat (transfer/full_raw import) and
+        // { success, report: {...} } (execute_import / master import).  The
+        // master-style report counts inserts as "imported".
+        const inserted = num(data.inserted != null ? data.inserted : (rep.inserted != null ? rep.inserted : rep.imported));
+        const updated = num(data.updated != null ? data.updated : rep.updated);
+        const skipped = num(data.skipped != null ? data.skipped : rep.skipped);
+        const failed = num(data.failed != null ? data.failed : (rep.failed != null ? rep.failed : rep.errors));
+        const warnings = num(data.warnings != null ? data.warnings : rep.warnings);
+        const tables = (data.tables != null ? data.tables : rep.tables);
+        const status = String(data.status != null ? data.status : rep.status || '').toLowerCase();
+        const tableResults = data.table_results || rep.table_results || [];
+        const issueRows = data.issue_rows || rep.issue_rows || [];
+        const issueRowsCount = data.issue_rows_count != null ? data.issue_rows_count : (rep.issue_rows_count || issueRows.length);
+        const errorDetails = data.error_details || rep.error_details || [];
+        const people = data.users || rep.users || [];
+        const reportName = data.report_name || rep.report_name || '';
+
+        const processed = inserted + updated + skipped + failed;
+        const saved = inserted + updated;
+        const missed = skipped + failed;
+        const aborted = data.ok === false && !inserted && !updated && !failed && !skipped && !tableResults.length && !issueRows.length;
+        const complete = !aborted && missed === 0 && warnings === 0 && (status === '' || status === 'ok') && processed > 0;
+        const rowsAllSaved = !aborted && missed === 0 && failed === 0 && processed > 0;
+        const nothing = !aborted && processed === 0 && !tableResults.length;
+        let tone; // success | warning | danger
+        let bannerPct = '', bannerBig = '', bannerSub = '';
+        if (aborted || status === 'failed' || (failed > 0 && saved === 0)) {
+            tone = 'danger';
+            bannerBig = 'Import failed';
+            bannerSub = (data.headline && data.headline !== 'Import failed' ? data.headline : (data.error || data.details || 'The import stopped before any data was saved.'));
+        } else if (complete) {
+            tone = 'success';
+            bannerPct = '100%';
+            bannerBig = 'SUCCESS — all rows imported';
+            bannerSub = 'Every one of the ' + processed + ' row(s) in the file was saved. Nothing missed.';
+        } else if (rowsAllSaved) {
+            // Every data row saved, but sheet-level warnings exist (sheet not in
+            // this app version, unknown columns, missing user sheet, ...).
+            tone = 'warning';
+            bannerPct = '100%';
+            bannerBig = 'All ' + processed + ' row(s) imported — ' + warnings + ' warning(s)';
+            bannerSub = 'Every data row in the file was saved. The warning(s) below (sheets not in this app version, extra columns, ...) are listed under missed / not imported entries.';
+        } else if (nothing) {
+            tone = 'warning';
+            bannerBig = 'Completed — 0 rows imported';
+            bannerSub = data.details || data.headline || 'No importable rows were found in this file for the selected scope/modules.';
+        } else {
+            const pct = processed > 0 ? Math.round((saved / processed) * 100) : 0;
+            tone = 'warning';
+            bannerPct = pct + '%';
+            bannerBig = missed + ' row(s) missed out of ' + processed;
+            bannerSub = 'Saved ' + saved + ' of ' + processed + ' row(s): ' + inserted + ' inserted, ' + updated
+                + ' updated, ' + skipped + ' skipped, ' + failed + ' failed'
+                + (warnings ? ', ' + warnings + ' warning(s)' : '') + '.';
+        }
+
+        // Card + title
+        if (taskResultCard) {
+            taskResultCard.classList.remove('border-success', 'border-danger', 'border-warning');
+            taskResultCard.classList.add(tone === 'success' ? 'border-success' : (tone === 'danger' ? 'border-danger' : 'border-warning'));
+        }
+        if (taskResultTitle) {
+            taskResultTitle.className = 'modal-title fw-bold ' + (tone === 'success' ? 'text-success' : (tone === 'danger' ? 'text-danger' : 'text-warning'));
+            taskResultTitle.innerHTML = tone === 'success'
+                ? '<i class="bi bi-check-circle-fill me-2"></i>Import successful'
+                : (tone === 'danger' ? '<i class="bi bi-x-circle-fill me-2"></i>Import failed' : '<i class="bi bi-exclamation-triangle-fill me-2"></i>Import completed with problems');
+        }
+
+        // Banner — the 100% / partial / failed condition
+        const banner = document.getElementById('taskResultBanner');
+        if (banner) {
+            const toneCls = {
+                success: ['border-success', 'text-success', 'bi bi-check-circle-fill'],
+                warning: ['border-warning', 'text-warning', 'bi bi-exclamation-triangle-fill'],
+                danger: ['border-danger', 'text-danger', 'bi bi-x-circle-fill']
+            }[tone];
+            let bhtml = '<div class="d-flex align-items-center gap-3">';
+            if (bannerPct) bhtml += '<span class="fs-1 fw-bold ' + toneCls[1] + '">' + escapeReportHtml(bannerPct) + '</span>';
+            else bhtml += '<i class="' + toneCls[2] + ' fs-2 ' + toneCls[1] + '"></i>';
+            bhtml += '<div><div class="fw-bold ' + toneCls[1] + '">' + escapeReportHtml(bannerBig) + '</div>';
+            if (bannerSub) bhtml += '<div class="small text-white-50">' + escapeReportHtml(bannerSub) + '</div>';
+            bhtml += '</div></div>';
+            banner.className = 'd-flex mb-3 p-3 rounded border ' + toneCls[0];
+            banner.innerHTML = bhtml;
+        }
+
+        // Headline + details
+        if (taskResultHeadline) {
+            taskResultHeadline.textContent = data.headline || (tone === 'success'
+                ? 'Import completed successfully.'
+                : (tone === 'danger' ? 'The import failed.' : 'Import completed, but some rows were not saved.'));
+        }
+        if (taskResultDetails) {
+            taskResultDetails.textContent = data.details || '';
+            taskResultDetails.style.display = data.details ? '' : 'none';
+        }
+
+        // Counts grid
+        const statsBox = document.getElementById('taskResultStats');
+        if (statsBox) {
+            if (inserted || updated || skipped || failed || tableResults.length) {
+                statsBox.innerHTML = renderImportStatsHtml({ inserted, updated, skipped, failed, warnings, tables: tables });
+                statsBox.style.display = '';
+            } else { statsBox.innerHTML = ''; statsBox.style.display = 'none'; }
+        }
+
+        // Missed rows / entries
+        const missedBox = document.getElementById('taskResultMissed');
+        if (missedBox) {
+            const mhtml = renderMissedEntriesHtml(issueRows, errorDetails, issueRowsCount);
+            if (mhtml) { missedBox.innerHTML = mhtml; missedBox.style.display = ''; }
+            else { missedBox.innerHTML = ''; missedBox.style.display = 'none'; }
+        }
+
+        // Per-table breakdown (+ users/roles section for manager restore)
+        const tablesBox = document.getElementById('taskResultTables');
+        if (tablesBox) {
+            let thtml = '';
+            if (tableResults.length) {
+                thtml += '<div class="fw-bold text-warning mb-1">Per-table breakdown</div>' + renderTableReportHtml(tableResults);
+            }
+            if (people && people.length) {
+                thtml += '<div class="fw-bold text-warning mt-3 mb-1">Users / roles</div><ul class="small mb-0">';
+                people.forEach((u) => {
+                    thtml += '<li><span class="text-info">' + escapeReportHtml(u.username || '') + '</span> — '
+                        + escapeReportHtml(u.role || '') + ' — ' + escapeReportHtml(u.action || '')
+                        + (u.error ? ' <span class="text-danger">(' + escapeReportHtml(u.error) + ')</span>' : '') + '</li>';
+                });
+                thtml += '</ul>';
+            }
+            if (thtml) { tablesBox.innerHTML = thtml; tablesBox.style.display = ''; }
+            else { tablesBox.innerHTML = ''; tablesBox.style.display = 'none'; }
+        }
+
+        // Download the full issue report (CSV) when one was persisted
+        const actionsBox = document.getElementById('taskResultActions');
+        if (actionsBox) {
+            if (reportName) {
+                actionsBox.innerHTML = '<a href="/import_export/full_raw_import_report/' + encodeURIComponent(reportName) + '" download class="btn btn-outline-info btn-sm w-100">'
+                    + '<i class="bi bi-download me-1"></i>Download full issue report (CSV) — every missed row with Excel row numbers</a>';
+                actionsBox.style.display = '';
+            } else { actionsBox.innerHTML = ''; actionsBox.style.display = 'none'; }
+        }
+
+        if (taskResultReloadBtn) {
+            taskResultReloadBtn.className = 'btn btn-sm ' + (tone === 'success' ? 'btn-success' : (tone === 'danger' ? 'btn-danger' : 'btn-warning'));
+            taskResultReloadBtn.textContent = 'Reload';
+            taskResultReloadBtn.onclick = () => window.location.reload();
+        }
+        modal.show();
+    }
+    window.showImportResult = showImportResult;
     function ensureTaskProgressModal() {
         if (!taskProgressModalEl) return null;
         if (!taskProgressModal) {
@@ -1010,8 +1234,14 @@ function toggleNavGroup(groupId, btn) {
         if (typeof hideLoading === 'function') hideLoading();
         const modal = ensureTaskResultModal();
         if (!modal) return;
+        // Generic (save/export) result — drop any import-report blocks so the
+        // dialog only shows this result.
+        ['taskResultBanner', 'taskResultStats', 'taskResultMissed', 'taskResultActions'].forEach(function (id) {
+            const el = document.getElementById(id);
+            if (el) { el.innerHTML = ''; el.style.display = 'none'; if (id === 'taskResultBanner') el.className = 'd-none mb-3 p-3 rounded border'; }
+        });
         if (taskResultCard) {
-            taskResultCard.classList.remove('border-success', 'border-danger');
+            taskResultCard.classList.remove('border-success', 'border-danger', 'border-warning');
             taskResultCard.classList.add(success ? 'border-success' : 'border-danger');
         }
         if (taskResultTitle) {
@@ -1022,9 +1252,10 @@ function toggleNavGroup(groupId, btn) {
         }
         if (taskResultHeadline) taskResultHeadline.textContent = headline || (success ? 'Completed.' : 'Failed.');
         if (taskResultDetails) taskResultDetails.textContent = details || '';
+        // This generic result never fills the table box itself — always clear
+        // it so a previous import-report breakdown cannot leak into it.
         const tablesBox = document.getElementById('taskResultTables');
-        if (tablesBox && !details) { /* keep existing report if already filled */ }
-        else if (tablesBox && !window.__keepImportReport) {
+        if (tablesBox) {
             tablesBox.style.display = 'none';
             tablesBox.innerHTML = '';
         }

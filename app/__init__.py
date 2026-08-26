@@ -55,6 +55,20 @@ def create_app(test_config: dict | None = None) -> Flask:
     max_upload_mb = int(os.environ.get("MAX_UPLOAD_MB", "256") or "256")
     journal_mode = _resolve_sqlite_journal_mode(db_path)
 
+    # Empty instance / deleted database → create a fresh empty SQLite file.
+    # Existing database → leave it alone (no wipe, no replace, no extra locks).
+    from app.services.instance_files import ensure_instance_runtime
+
+    runtime_status = ensure_instance_runtime(
+        instance_dir=instance_dir,
+        db_path=Path(db_path),
+        journal_mode=journal_mode,
+    )
+    snapshot_path = Path(
+        os.environ.get("DB_HEALTH_SNAPSHOT_PATH")
+        or str(Path(db_path).parent / "health_snapshot.json")
+    )
+
     secret_file = instance_dir / "secret_key"
     secret = os.environ.get("SECRET_KEY")
     if not secret:
@@ -85,7 +99,12 @@ def create_app(test_config: dict | None = None) -> Flask:
         APP_DB_PATH=db_path,
         AMS_V44_SCHEMA_PATH=str(root / "v44" / "SCHEMA_v4_4.sql"),
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        SQLALCHEMY_ENGINE_OPTIONS={
+            "connect_args": {"timeout": 30, "check_same_thread": False},
+        },
         SQLITE_JOURNAL_MODE=journal_mode,
+        AMS_RUNTIME_DB_CREATED=bool(runtime_status.created),
+        DB_HEALTH_SNAPSHOT_PATH=str(snapshot_path),
         MAX_CONTENT_LENGTH=max_upload_mb * 1024 * 1024,
         PERMANENT_SESSION_LIFETIME=timedelta(days=14),
         REMEMBER_COOKIE_DURATION=timedelta(days=30),
@@ -138,6 +157,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 cursor = dbapi_connection.cursor()
                 try:
                     cursor.execute("PRAGMA foreign_keys=ON")
+                    cursor.execute("PRAGMA busy_timeout=8000")
                     enabled = cursor.execute("PRAGMA foreign_keys").fetchone()
                     if not enabled or enabled[0] != 1:
                         raise RuntimeError("SQLite foreign-key enforcement could not be enabled")
@@ -145,36 +165,6 @@ def create_app(test_config: dict | None = None) -> Flask:
                     cursor.close()
 
             engine._ams_fk_listener = True
-
-    @app.before_request
-    def _sqlite_wal_once():
-        if app.config.get('_sqlite_wal_ready'):
-            return
-        try:
-            from sqlalchemy import text as sql_text
-            mode = app.config.get('SQLITE_JOURNAL_MODE', 'WAL')
-            # WAL needs shared-memory (a -shm file) that every process mmaps.
-            # Shared hosts such as PythonAnywhere keep /home on a network
-            # filesystem where that is unsupported, so the pragma - or the very
-            # next query - raises "unable to open database file" / "disk I/O
-            # error" and every request turns into a 500.  DELETE journalling
-            # works everywhere, so it is the safe mode there.
-            db.session.execute(sql_text(f'PRAGMA journal_mode={mode}'))
-            db.session.execute(sql_text('PRAGMA busy_timeout=8000'))
-            db.session.commit()
-            app.config['_sqlite_wal_ready'] = True
-        except Exception:
-            # Never let a pragma failure turn a normal page into a 500.
-            try:
-                db.session.rollback()
-            except Exception:
-                pass
-            app.config['_sqlite_wal_ready'] = True
-            logging.getLogger(__name__).warning(
-                "Could not apply SQLite journal pragmas; continuing with the "
-                "database default journal mode.",
-                exc_info=True,
-            )
 
     login_manager = LoginManager()
     login_manager.login_view = "login"
@@ -243,11 +233,24 @@ def create_app(test_config: dict | None = None) -> Flask:
             # v4.4 file, not a retired live path captured at import time.
             health_service.db_path = db_path
             constants_svc.db_path = db_path
+            health_service._DB_HEALTH_SNAPSHOT_PATH = str(snapshot_path)
+            constants_svc._DB_HEALTH_SNAPSHOT_PATH = str(snapshot_path)
+            from app.services import schema as schema_svc
+            schema_svc.db_path = db_path
+            schema_svc._DB_HEALTH_SNAPSHOT_PATH = str(snapshot_path)
             from app.services.health import (
                 _guard_db_file_before_bootstrap,
                 _db_health_check_after_bootstrap,
             )
             from app.services.schema import _bootstrap_database
+            if runtime_status.created:
+                # Recreating a deleted/missing file must not be treated as
+                # accidental data loss against a leftover health snapshot.
+                app.config["_DB_FILE_WAS_MISSING"] = True
+                try:
+                    snapshot_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
             if app.config.get("TESTING"):
                 from app.services.schema import _ensure_default_admin, _ensure_model_columns
@@ -264,7 +267,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                         retire_legacy_database_files,
                     )
                     retire_legacy_database_files(instance_dir, extra_dirs=[root / "v44"])
-                    _retire_stale_live_health_snapshot(instance_dir / "health_snapshot.json")
+                    _retire_stale_live_health_snapshot(snapshot_path)
                 _guard_db_file_before_bootstrap()
                 if app.config.get("AMS_SCHEMA_VERSION") == "v44":
                     # The optional v4.4 SQL bundle is a *nice to have*: it seeds
@@ -359,7 +362,7 @@ def _retire_stale_live_health_snapshot(snapshot_path: Path) -> None:
         snapshot_path.unlink(missing_ok=True)
         return
     db_name = Path(str(payload.get("db_path") or "")).name
-    if db_name in {"ahmed_cement.db", "ahmed_cement_v44.db"} or int(payload.get("total") or 0) > 0:
+    if db_name in {"ahmed_cement.db", "ahmed_cement_v44.db"}:
         snapshot_path.unlink(missing_ok=True)
 
 

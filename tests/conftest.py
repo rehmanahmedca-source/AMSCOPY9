@@ -24,9 +24,11 @@ def app_factory(tmp_path, monkeypatch):
     def _factory(db_file: Path | None = None, **env):
         db_file = db_file or (tmp_path / "test_ams.db")
         monkeypatch.setenv("APP_DB_PATH", str(db_file))
+        monkeypatch.setenv("DB_HEALTH_SNAPSHOT_PATH", str(tmp_path / "health_snapshot.json"))
         monkeypatch.setenv("ALLOW_EMPTY_DB", "1")
         monkeypatch.setenv("BACKUP_EMBEDDED_SCHEDULER", "0")
         monkeypatch.setenv("AMS_SCHEMA_VERSION", "v44")
+        monkeypatch.setenv("SQLITE_JOURNAL_MODE", "DELETE")
         monkeypatch.setenv("DEFAULT_ADMIN_USER", "Admin")
         monkeypatch.setenv("DEFAULT_ADMIN_PASSWORD", "Admin@fbm12345")
         for key, value in env.items():
@@ -56,18 +58,29 @@ def make_csrf_client(app):
         def __getattr__(self, name):
             return getattr(raw, name)
 
-        def post(self, *args, **kwargs):
-            data = kwargs.get("data")
-            if isinstance(data, dict) and "_csrf_token" not in data:
-                token = None
+        def _csrf_token(self):
+            with raw.session_transaction() as sess:
+                token = sess.get("_csrf_token")
+            if not token:
+                token = "test-csrf-token"
                 with raw.session_transaction() as sess:
-                    token = sess.get("_csrf_token")
-                if not token:
-                    token = "test-csrf-token"
-                    with raw.session_transaction() as sess:
-                        sess["_csrf_token"] = token
+                    sess["_csrf_token"] = token
+            return token
+
+        def post(self, *args, **kwargs):
+            # JSON posts cannot also carry form ``data``.
+            if kwargs.get("json") is not None:
+                headers = dict(kwargs.get("headers") or {})
+                if "X-CSRF-Token" not in headers and "X-CSRFToken" not in headers:
+                    headers["X-CSRF-Token"] = self._csrf_token()
+                    kwargs["headers"] = headers
+                return raw.post(*args, **kwargs)
+            data = kwargs.get("data")
+            if data is None:
+                data = {}
+            if isinstance(data, dict) and "_csrf_token" not in data:
                 data = dict(data)
-                data["_csrf_token"] = token
+                data["_csrf_token"] = self._csrf_token()
                 kwargs["data"] = data
             return raw.post(*args, **kwargs)
 

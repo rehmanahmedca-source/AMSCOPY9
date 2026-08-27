@@ -833,6 +833,13 @@ def cash_flow():
     this_month_str = fresh_start_dt.replace(day=1).strftime('%Y-%m-%d')
     last_30_days_str = (fresh_start_dt - timedelta(days=30)).strftime('%Y-%m-%d')
 
+    recent_reconciliations = (
+        CashFlowDifferenceAdjustment.query
+        .order_by(CashFlowDifferenceAdjustment.adjustment_date.desc())
+        .limit(10)
+        .all()
+    )
+
     common = dict(
         rows=display_rows,
         cash_accounts=cash_accounts,
@@ -882,6 +889,7 @@ def cash_flow():
         adjustment_amount=adjustment_amount,
         physical_cash_available=physical_cash_available,
         reconciliation_reason=reconciliation_reason,
+        recent_reconciliations=recent_reconciliations,
         show_delete_button=bool(adjustment_entry and adjustment_entry.physical_cash_available is not None),
         adjusted_closing_balance=adjusted_closing_balance,
         adjustment_date_input=adjustment_date_input,

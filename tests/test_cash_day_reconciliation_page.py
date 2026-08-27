@@ -120,3 +120,75 @@ def test_lock_carries_counted_to_next_day_opening(app, client):
         assert ncash["opening"] == 1390.0
         # clean up lock so other tests unaffected
         recon.unlock_day(day)
+
+
+def test_recon_board_forms_carry_server_rendered_csrf(app, client):
+    """Regression: the save/clear/lock/unlock forms must render a hidden
+    ``_csrf_token`` server-side. The board posts via fetch(FormData); if the
+    layout JS token injection ever fails (stale page, JS error on the large
+    cash_flow page), a token-less post was rejected with 400 and the row just
+    showed a red "Error" with no explanation."""
+    import re
+    from models import db, Account
+    with app.app_context():
+        acc = _mk_account(db, Account, "FBM CASH IN HAND", "cash", 1000.0)
+        acc_id = acc.id
+
+    _login(client)
+    rv = client.get("/daily_reconciliation")
+    body = rv.get_data(as_text=True)
+    assert rv.status_code == 200
+
+    # Every POST form in the board must have the token baked in.
+    post_forms = re.findall(r'<form method="POST".*?</form>', body, re.S)
+    assert post_forms
+    for f in post_forms:
+        assert 'name="_csrf_token"' in f
+
+    # The embedded board on /cash_flow must carry the token too.
+    body2 = client.get("/cash_flow?recon_day=" + date.today().isoformat()).get_data(as_text=True)
+    embed_forms = re.findall(r'<form method="POST"[^>]*data-dr-(?:count|clear)-form.*?</form>', body2, re.S)
+    assert embed_forms
+    for f in embed_forms:
+        assert 'name="_csrf_token"' in f
+
+    # Raw client (no automatic X-CSRF-Token header / body injection): the only
+    # token sent is the server-rendered field inside the form, exactly like a
+    # browser whose layout JS did not patch fetch.
+    raw = app.test_client()
+    with raw.session_transaction() as sess:
+        sess["_csrf_token"] = "recon-raw-csrf"
+    raw.post("/login", data={
+        "username": "Admin", "password": "Admin@fbm12345",
+        "_csrf_token": "recon-raw-csrf",
+    })
+    board = raw.get("/daily_reconciliation").get_data(as_text=True)
+    form_token = re.search(
+        r'data-dr-count-form>(?:(?!</form>).)*?name="_csrf_token" value="([^"]+)"',
+        board, re.S,
+    ).group(1)
+    rv = raw.post(
+        "/daily_reconciliation",
+        data={
+            "action": "save_count", "day": date.today().isoformat(),
+            "account_id": acc_id, "counted": "999",
+            "_csrf_token": form_token,
+        },
+        headers={"X-Requested-With": "XMLHttpRequest", "Accept": "application/json"},
+    )
+    assert rv.status_code == 200
+    payload = rv.get_json()
+    assert payload["ok"] is True
+
+    # A stale/garbage token must still be rejected (CSRF gate stays effective).
+    rv = raw.post(
+        "/daily_reconciliation",
+        data={
+            "action": "save_count", "day": date.today().isoformat(),
+            "account_id": acc_id, "counted": "1000",
+            "_csrf_token": "not-the-real-token",
+        },
+        headers={"X-Requested-With": "XMLHttpRequest", "Accept": "application/json"},
+    )
+    assert rv.status_code == 400
+    assert rv.get_json().get("ok") is not True

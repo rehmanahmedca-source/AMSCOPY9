@@ -1112,6 +1112,11 @@ def daily_reconciliation():
             ok = False
             message = 'Enter a valid counted amount.' if action == 'save_count' else 'Unable to update reconciliation.'
             status = 'danger'
+        except Exception as exc:  # DB/schema/FK failures — JSON clients need a payload, not a 500 page
+            db.session.rollback()
+            ok = False
+            message = f'Unable to save reconciliation: {exc}'
+            status = 'danger'
         if wants_json:
             payload = _dr_json_context(day_str)
             payload.update({'ok': ok, 'message': message, 'status': status})

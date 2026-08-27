@@ -1076,13 +1076,17 @@ def daily_reconciliation():
 
     if request.method == 'POST':
         action = (request.form.get('action') or '').strip()
+        counted_raw = (request.form.get('counted') or '').strip()
+        # fetch(FormData) omits the submit button. Treat a counted amount +
+        # account as save_count so Enter / unfocused Save still persist.
+        if not action and counted_raw and request.form.get('account_id'):
+            action = 'save_count'
         wants_json = _dr_wants_json()
         ok = True
         message = ''
         status = 'success'
         try:
             if action == 'save_count':
-                counted_raw = (request.form.get('counted') or '').strip()
                 if counted_raw == '':
                     raise ValueError('empty counted amount')
                 recon.save_count(
@@ -1112,14 +1116,15 @@ def daily_reconciliation():
             ok = False
             message = 'Enter a valid counted amount.' if action == 'save_count' else 'Unable to update reconciliation.'
             status = 'danger'
-        except Exception as exc:  # DB/schema/FK failures — JSON clients need a payload, not a 500 page
+        except Exception:
             db.session.rollback()
+            logger.exception('Daily reconciliation save failed')
             ok = False
-            message = f'Unable to save reconciliation: {exc}'
+            message = 'Unable to save reconciliation. Reload the page and try again.'
             status = 'danger'
         if wants_json:
             payload = _dr_json_context(day_str)
-            payload.update({'ok': ok, 'message': message, 'status': status})
+            payload.update({'ok': ok, 'message': message, 'error': None if ok else message, 'status': status})
             return jsonify(payload), (200 if ok else 400)
         flash(message, status)
         rt = _safe_return_to()

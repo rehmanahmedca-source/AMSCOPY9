@@ -192,3 +192,55 @@ def test_recon_board_forms_carry_server_rendered_csrf(app, client):
     )
     assert rv.status_code == 400
     assert rv.get_json().get("ok") is not True
+
+
+def test_save_count_without_action_field_still_persists(app, client):
+    """Regression: fetch(FormData) omits the submit button. Enter or an
+    unfocused Save click posted counted+account_id with no ``action``, the
+    server rejected it, and the row showed a red Error with no save."""
+    from models import db, Account, CashDayAccountPosition
+
+    with app.app_context():
+        acc = _mk_account(db, Account, "FBM CASH IN HAND", "cash", 250000.0)
+        acc_id = acc.id
+
+    _login(client)
+    day = date.today().isoformat()
+    rv = client.post(
+        "/daily_reconciliation",
+        data={
+            "day": day,
+            "account_id": acc_id,
+            "counted": "250000",
+        },
+        headers={"X-Requested-With": "XMLHttpRequest", "Accept": "application/json"},
+    )
+    assert rv.status_code == 200
+    payload = rv.get_json()
+    assert payload["ok"] is True
+    cash = [p for p in payload["positions"] if p["account_id"] == acc_id][0]
+    assert cash["counted"] == 250000.0
+    assert cash["difference"] == 0.0
+
+    with app.app_context():
+        row = CashDayAccountPosition.query.filter_by(
+            position_date=date.today(), account_id=acc_id
+        ).first()
+        assert row is not None
+        assert float(row.counted) == 250000.0
+
+
+def test_recon_count_forms_include_hidden_action(app, client):
+    from models import db, Account
+
+    with app.app_context():
+        _mk_account(db, Account, "FBM CASH IN HAND", "cash", 1000.0)
+
+    _login(client)
+    body = client.get("/daily_reconciliation").get_data(as_text=True)
+    assert 'data-dr-count-form' in body
+    assert 'name="action" value="save_count"' in body
+    assert 'name="action" value="clear_count"' in body
+    # JS must not pick the action from whatever field currently has focus.
+    assert "document.activeElement && document.activeElement.form === form" not in body
+    assert "ev.submitter" in body

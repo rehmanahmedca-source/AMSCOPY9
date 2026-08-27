@@ -161,6 +161,7 @@
             <td class="text-end dr-mono fw-bold text-dark" data-dr-field="expected_closing">Rs. {{ "{:,.0f}".format(p.expected_closing) }}</td>
             <td class="text-end dr-mono dr-counted">
               <form method="POST" action="{{ dr_post_action }}" class="dr-count-form d-inline-flex align-items-center justify-content-end gap-1" data-dr-count-form>
+                <input type="hidden" name="action" value="save_count">
                 <input type="hidden" name="day" value="{{ dr.day_str }}">
                 <input type="hidden" name="account_id" value="{{ p.account_id }}">
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
@@ -168,7 +169,7 @@
                 <input type="number" step="0.01" name="counted" class="form-control form-control-sm dr-mono dr-count-input"
                        value="{{ p.counted if p.counted is not none else '' }}"
                        placeholder="{{ "{:,.0f}".format(p.expected_closing) }}" aria-label="Actual counted balance for {{ p.account_name }}" required>
-                <button class="btn btn-sm btn-success fw-bold" name="action" value="save_count" title="Save without reloading"><i class="bi bi-save"></i></button>
+                <button type="submit" class="btn btn-sm btn-success fw-bold" name="action" value="save_count" title="Save counted balance"><i class="bi bi-save"></i></button>
               </form>
             </td>
             <td class="text-end dr-mono" data-dr-field="difference">
@@ -182,11 +183,12 @@
                 <span class="dr-save-state text-muted" data-dr-save-state></span>
                 {% if not p.is_locked %}
                 <form method="POST" action="{{ dr_post_action }}" class="d-inline" data-dr-clear-form>
+                  <input type="hidden" name="action" value="clear_count">
                   <input type="hidden" name="day" value="{{ dr.day_str }}">
                   <input type="hidden" name="account_id" value="{{ p.account_id }}">
                   <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                   {% if dr.embed %}<input type="hidden" name="return_to" value="{{ dr_return_to }}">{% endif %}
-                  <button class="btn btn-sm btn-outline-danger" name="action" value="clear_count" title="Clear counted value"><i class="bi bi-x"></i></button>
+                  <button type="submit" class="btn btn-sm btn-outline-danger" name="action" value="clear_count" title="Clear counted value"><i class="bi bi-x"></i></button>
                 </form>
                 {% endif %}
                 {% if p.is_locked %}<span class="badge bg-primary"><i class="bi bi-lock-fill me-1"></i>Locked</span>{% endif %}
@@ -256,37 +258,55 @@
       }
     });
   }
-  async function postForm(form){
+  function showSaveState(state, text, cls, title){
+    if (!state) return;
+    state.textContent = text;
+    state.className = 'dr-save-state ' + (cls || 'text-muted');
+    state.title = title || text || '';
+  }
+  async function postForm(form, ev){
     const row = form.closest('[data-dr-row]');
     const state = row ? row.querySelector('[data-dr-save-state]') : null;
-    if (state) { state.textContent = 'Saving…'; state.className = 'dr-save-state text-muted'; }
-    const submitter = document.activeElement && document.activeElement.form === form ? document.activeElement : form.querySelector('button[name="action"]');
+    showSaveState(state, 'Saving…', 'text-muted');
+    // FormData omits the clicked button. Prefer SubmitEvent.submitter; never
+    // use document.activeElement (Enter / unfocused Save left action blank
+    // and the row showed a red "Error"). Hidden action=save_count/clear_count
+    // is the fallback so a count is still saved.
+    const submitter = (ev && ev.submitter) || form.querySelector('button[type="submit"][name="action"]');
     const fd = new FormData(form);
     if (submitter && submitter.name) fd.set(submitter.name, submitter.value);
+    if (!fd.get('action')) {
+      fd.set('action', form.hasAttribute('data-dr-clear-form') ? 'clear_count' : 'save_count');
+    }
     try {
-      const res = await fetch(form.action, { method:'POST', body:fd, headers:{ 'X-Requested-With':'XMLHttpRequest', 'Accept':'application/json' } });
+      const res = await fetch(form.action, {
+        method:'POST',
+        body:fd,
+        credentials:'same-origin',
+        headers:{ 'X-Requested-With':'XMLHttpRequest', 'Accept':'application/json' }
+      });
       let payload = null;
-      try { payload = await res.json(); } catch (e) { payload = null; }
-      if (payload) updateBoard(payload);
-      const errMsg = (payload && (payload.error || payload.message)) || ('Save failed (HTTP ' + res.status + ')');
+      const ctype = (res.headers.get('content-type') || '').toLowerCase();
+      if (ctype.includes('application/json')) {
+        try { payload = await res.json(); } catch (e) { payload = null; }
+      }
+      if (payload && Array.isArray(payload.positions)) updateBoard(payload);
+      let errMsg = (payload && (payload.error || payload.message)) || '';
+      if (!errMsg) {
+        if (res.redirected || (res.ok && !payload)) errMsg = 'Session expired. Reload the page and log in.';
+        else errMsg = 'Save failed (HTTP ' + res.status + ')';
+      }
       if (res.ok && payload && payload.ok) {
-        if (state) {
-          state.textContent = 'Saved'; state.className = 'dr-save-state text-success';
-          window.setTimeout(function(){ if (state.textContent === 'Saved') state.textContent = ''; }, 1200);
-        }
+        showSaveState(state, 'Saved', 'text-success');
+        window.setTimeout(function(){ if (state && state.textContent === 'Saved') state.textContent = ''; }, 1200);
       } else {
-        if (state) {
-          // CSRF/session expiry is permanent until the page is reloaded (the
-          // server-rendered token is refreshed), so say so directly.
-          const csrfExpired = /csrf|token/i.test(errMsg);
-          state.textContent = csrfExpired ? 'Reload page & retry' : 'Error';
-          state.title = errMsg;
-          state.className = 'dr-save-state text-danger';
-        }
+        const csrfExpired = /csrf|token|session expired|log in/i.test(errMsg);
+        showSaveState(state, csrfExpired ? 'Reload page & retry' : 'Error', 'text-danger', errMsg);
         throw new Error(errMsg);
       }
     } catch (err) {
-      if (state) { state.textContent = state.textContent || 'Error'; state.className = 'dr-save-state text-danger'; state.title = err.message || ''; }
+      if (state && !state.textContent) showSaveState(state, 'Error', 'text-danger', err.message || '');
+      else if (state && !state.title) state.title = err.message || '';
       console.error(err);
     }
   }
@@ -294,7 +314,7 @@
     form.addEventListener('submit', function(ev){
       if (!window.fetch || !window.FormData) return;
       ev.preventDefault();
-      postForm(form);
+      postForm(form, ev);
     });
   });
 })();

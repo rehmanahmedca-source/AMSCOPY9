@@ -1954,7 +1954,8 @@ function toggleNavGroup(groupId, btn) {
             const originalFetch = window.fetch;
             window.fetch = function (input, init) {
                 const method = (init && init.method) || (input && input.method) || 'GET';
-                if (csrfIsMutating(method) && csrfIsSameOrigin(input && input.url)) {
+                const url = (typeof input === 'string') ? input : (input && input.url);
+                if (csrfIsMutating(method) && csrfIsSameOrigin(url)) {
                     init = init || {};
                     init.headers = Object.assign({}, init.headers || {});
                     init.headers['X-CSRF-Token'] = csrfToken;

@@ -83,14 +83,14 @@ def account_positions_for_date(day) -> list:
         p.account_id: p
         for p in CashDayAccountPosition.query.filter_by(position_date=day).all()
     }
-    locks = {
-        p.account_id: p
-        for p in CashDayAccountPosition.query.filter(
-            CashDayAccountPosition.is_locked.is_(True),
-            CashDayAccountPosition.position_date < day,
-            CashDayAccountPosition.account_id.in_([a.id for a in accounts] or [0]),
-        ).all()
-    }
+    locks = {}
+    prior_locked = CashDayAccountPosition.query.filter(
+        CashDayAccountPosition.is_locked.is_(True),
+        CashDayAccountPosition.position_date < day,
+        CashDayAccountPosition.account_id.in_([a.id for a in accounts] or [0]),
+    ).order_by(CashDayAccountPosition.position_date.asc()).all()
+    for p in prior_locked:
+        locks[p.account_id] = p
 
     # Group accounts by the window that feeds their opening so we only call
     # collect_cash_flow_rows once per distinct window.

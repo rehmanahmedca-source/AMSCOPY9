@@ -980,6 +980,203 @@ def cash_flow_differences():
     )
 
 
+@bp.route('/daily_reconciliation', methods=['GET', 'POST'])
+@login_required
+def daily_reconciliation():
+    """Daily Cash & Bank Reconciliation board (reference layout #1)."""
+    from app.services import cash_day_recon as recon
+
+    today_str = pk_today().strftime('%Y-%m-%d')
+    day_str = (request.form.get('day') or request.args.get('day') or today_str).strip() or today_str
+    try:
+        datetime.strptime(day_str, '%Y-%m-%d')
+    except ValueError:
+        day_str = today_str
+
+    if request.method == 'POST':
+        action = (request.form.get('action') or '').strip()
+        if action == 'save_count':
+            try:
+                recon.save_count(
+                    day_str,
+                    int(request.form.get('account_id')),
+                    float(request.form.get('counted') or 0),
+                    actor=current_user,
+                )
+                flash('Counted balance saved.', 'success')
+            except (TypeError, ValueError):
+                db.session.rollback()
+                flash('Enter a valid counted amount.', 'danger')
+        elif action == 'lock':
+            recon.lock_day(day_str, actor=current_user, note=request.form.get('note') or '')
+            flash(f'Day {day_str} verified & locked. Locked totals become the next day opening.', 'success')
+        elif action == 'unlock':
+            recon.unlock_day(day_str)
+            flash(f'Day {day_str} unlocked.', 'warning')
+        elif action == 'clear_count':
+            recon.delete_count(day_str, int(request.form.get('account_id')))
+            flash('Counted balance cleared.', 'warning')
+        return redirect(url_for('daily_reconciliation', day=day_str))
+
+    positions = recon.account_positions_for_date(day_str)
+    day_lock = recon.get_day_lock(day_str)
+    total_expected = _money_round(sum(p['expected_closing'] for p in positions))
+    counted_values = [p['effective_counted'] for p in positions if p['effective_counted'] is not None]
+    total_counted = _money_round(sum(counted_values)) if counted_values else None
+    net_difference = (
+        _money_round(total_counted - total_expected) if total_counted is not None else 0.0
+    )
+    prev_str = (datetime.strptime(day_str, '%Y-%m-%d') - timedelta(days=1)).strftime('%Y-%m-%d')
+    next_str = (datetime.strptime(day_str, '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
+
+    return render_template(
+        'daily_reconciliation.html',
+        day_str=day_str,
+        prev_str=prev_str,
+        next_str=next_str,
+        positions=positions,
+        day_lock=day_lock,
+        total_expected=total_expected,
+        total_counted=total_counted,
+        net_difference=net_difference,
+    )
+
+
+def _ft_date_preset(preset, today):
+    if preset == 'today':
+        return today, today
+    if preset == 'yesterday':
+        y = today - timedelta(days=1)
+        return y, y
+    if preset == 'this_week':
+        return today - timedelta(days=today.weekday()), today
+    if preset == 'last_30':
+        return today - timedelta(days=30), today
+    if preset == 'all':
+        return date(2000, 1, 1), today
+    return today.replace(day=1), today  # this_month default
+
+
+@bp.route('/financial_tracker', methods=['GET'])
+@login_required
+def financial_tracker():
+    """Financial Tracking Filter Matrix (reference layout #2)."""
+    today = pk_today()
+    preset = (request.args.get('preset') or 'this_month').strip().lower()
+    from_d, to_d = _ft_date_preset(preset, today)
+    f_direction = (request.args.get('direction') or 'all').strip().lower()
+    f_category = (request.args.get('category') or '').strip()
+    f_account = (request.args.get('account') or '').strip()
+    f_client = (request.args.get('client') or '').strip()
+    f_supplier = (request.args.get('supplier') or '').strip()
+    f_partner = (request.args.get('partner') or '').strip()
+    f_worker = (request.args.get('worker') or '').strip()
+    f_vehicle = (request.args.get('vehicle') or '').strip().lower()
+    f_method = (request.args.get('method') or 'all').strip().lower()
+    f_q = (request.args.get('q') or '').strip().lower()
+
+    rows = collect_cash_flow_rows(from_d.strftime('%Y-%m-%d'), to_d.strftime('%Y-%m-%d'))
+
+    role_filters = {
+        'client': f_client, 'supplier': f_supplier,
+        'partner': f_partner, 'worker': f_worker,
+    }
+    active_roles = {k: v for k, v in role_filters.items() if v and v != 'all'}
+
+    filtered = []
+    for r in rows:
+        if (r.get('status') or 'active') != 'active':
+            continue
+        if f_direction in ('in', 'out') and r.get('type') != f_direction:
+            continue
+        if f_direction == 'transfer' and r.get('type') != CF_DIR_TRANSFER:
+            continue
+        if f_category and f_category.lower() not in (r.get('category') or '').lower():
+            continue
+        if f_account:
+            try:
+                aid = int(f_account)
+            except ValueError:
+                aid = -1
+            if r.get('account_id') != aid and r.get('account_to_id') != aid:
+                continue
+        if active_roles:
+            ptype = (r.get('party_type') or '').lower()
+            pname = (r.get('party_name') or '')
+            ok = False
+            for role, val in active_roles.items():
+                if ptype == role and (val.lower() == pname.lower() or val.lower() in pname.lower()):
+                    ok = True
+            if not ok:
+                continue
+        if f_vehicle and f_vehicle not in ' '.join([
+            r.get('description') or '', r.get('note') or '', r.get('reference') or ''
+        ]).lower():
+            continue
+        if f_method != 'all' and f_method not in (r.get('method') or r.get('origin_label') or '').lower():
+            continue
+        if f_q:
+            blob = ' '.join([
+                str(r.get('reference') or ''), str(r.get('description') or ''),
+                str(r.get('note') or ''), str(r.get('party_name') or ''),
+                str(r.get('category') or ''), str(r.get('account_display') or ''),
+            ]).lower()
+            if f_q not in blob:
+                continue
+        filtered.append(r)
+
+    summary = summarize_cash_flow_rows(filtered)
+    total_in = _money_round(summary['total_cash_in'] + summary['total_transfer_in'])
+    total_out = _money_round(summary['total_cash_out'] + summary['total_transfer_out'])
+    net = _money_round(total_in - total_out)
+
+    # Dropdown options sourced from the data.
+    all_rows_active = [r for r in rows if (r.get('status') or 'active') == 'active']
+    cat_options = sorted({(r.get('category') or '').strip() for r in all_rows_active if (r.get('category') or '').strip()})
+    account_options = [{'id': a.id, 'label': _cf_account_label(a)} for a in _cf_company_accounts(active_only=True)]
+
+    def _party_opts(ptype):
+        return sorted({
+            (r.get('party_name') or '').strip()
+            for r in all_rows_active
+            if (r.get('party_type') or '').lower() == ptype and (r.get('party_name') or '').strip()
+        })
+
+    ctx = dict(
+        preset=preset, from_d=from_d, to_d=to_d,
+        f_direction=f_direction, f_category=f_category, f_account=f_account,
+        f_client=f_client, f_supplier=f_supplier, f_partner=f_partner,
+        f_worker=f_worker, f_vehicle=f_vehicle, f_method=f_method, f_q=f_q,
+        rows=filtered, total_in=total_in, total_out=total_out, net=net,
+        record_count=len(filtered),
+        cat_options=cat_options, account_options=account_options,
+        client_opts=_party_opts('client'), supplier_opts=_party_opts('supplier'),
+        partner_opts=_party_opts('partner'), worker_opts=_party_opts('worker'),
+        vehicle_opts=sorted({(r.get('vehicle') or '').strip() for r in all_rows_active if (r.get('vehicle') or '').strip()}),
+        breakdown_cat=summary['breakdown_cat'],
+        breakdown_account=summary['breakdown_account'],
+    )
+
+    if request.args.get('export_csv') == '1':
+        buf = io.StringIO()
+        import csv
+        w = csv.writer(buf)
+        w.writerow(['Date', 'Type', 'Account', 'Category', 'Party', 'In', 'Out', 'Transfer', 'Reference', 'Description'])
+        for r in filtered:
+            w.writerow([
+                r.get('date'), r.get('tx_type_label'), r.get('account_display'),
+                r.get('category'), r.get('party_name'), r.get('cash_in') or '',
+                r.get('cash_out') or '', r.get('transfer_amount') or '',
+                r.get('reference'), r.get('description'),
+            ])
+        resp = make_response(buf.getvalue())
+        resp.headers['Content-Type'] = 'text/csv; charset=utf-8'
+        resp.headers['Content-Disposition'] = f'attachment; filename=financial_tracker_{from_d}_{to_d}.csv'
+        return resp
+
+    return render_template('financial_tracker.html', **ctx)
+
+
 @bp.route('/cash_flow_differences/<int:rec_id>')
 @login_required
 def cash_flow_reconciliation_detail(rec_id):

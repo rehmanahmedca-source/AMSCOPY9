@@ -510,6 +510,12 @@
                 <a href="{{ url_for('cash_flow') }}" class="nav-link {{ 'active' if request.path.startswith('/cash_flow') }}" onclick="closeSidebar()">
                     <i class="bi bi-water"></i> Cash Flow
                 </a>
+                <a href="{{ url_for('daily_reconciliation') }}" class="nav-link {{ 'active' if request.path.startswith('/daily_reconciliation') }}" onclick="closeSidebar()">
+                    <i class="bi bi-check2-circle"></i> Daily Reconciliation
+                </a>
+                <a href="{{ url_for('financial_tracker') }}" class="nav-link {{ 'active' if request.path.startswith('/financial_tracker') }}" onclick="closeSidebar()">
+                    <i class="bi bi-funnel"></i> Financial Tracker
+                </a>
                 {% endif %}
                 {% if current_user.can_view_delivery_rent or current_user.role == 'admin' %}
                 <a href="/delivery_rents" class="nav-link {{ 'active' if request.path == '/delivery_rents' }}" onclick="closeSidebar()">

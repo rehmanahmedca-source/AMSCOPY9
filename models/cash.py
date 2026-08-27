@@ -323,3 +323,56 @@ class CashFlowReconciliationAudit(db.Model):
         foreign_keys=[reconciliation_id]
     )
 
+
+class CashDayLock(db.Model):
+    """Day-level lock marker for the Daily Cash & Bank Reconciliation page.
+
+    When a financial day is verified & locked, the counted total for that day
+    becomes the authoritative figure and each account's counted closing is
+    carried forward as the next day's opening position.
+    """
+    __tablename__ = 'cash_day_lock'
+    id = db.Column(db.Integer, primary_key=True)
+    lock_date = db.Column(db.Date, nullable=False, index=True)
+    total_expected = db.Column(db.Float, default=0)
+    total_counted = db.Column(db.Float, default=0)
+    difference = db.Column(db.Float, default=0)
+    note = db.Column(db.String(500))
+    locked_by = db.Column(db.String(80))
+    locked_at = db.Column(db.DateTime, default=pk_model_now)
+    updated_at = db.Column(db.DateTime, default=pk_model_now, onupdate=pk_model_now)
+    __table_args__ = (
+        UniqueConstraint('lock_date', name='uq_cash_day_lock_date'),
+    )
+
+
+class CashDayAccountPosition(db.Model):
+    """Per-account position for a financial day on the reconciliation page.
+
+    Stores the ledger-computed movement columns plus the user's physical
+    counted figure.  When ``is_locked`` is true the ``counted`` value is the
+    authoritative closing for that account and rolls forward as the next
+    day's opening.
+    """
+    __tablename__ = 'cash_day_account_position'
+    id = db.Column(db.Integer, primary_key=True)
+    position_date = db.Column(db.Date, nullable=False, index=True)
+    account_id = db.Column(db.Integer, nullable=False, index=True)
+    account_name = db.Column(db.String(100))
+    opening = db.Column(db.Float, default=0)
+    amount_in = db.Column(db.Float, default=0)
+    amount_out = db.Column(db.Float, default=0)
+    transfer_in = db.Column(db.Float, default=0)
+    transfer_out = db.Column(db.Float, default=0)
+    expected_closing = db.Column(db.Float, default=0)
+    counted = db.Column(db.Float)          # NULL until edited / locked
+    difference = db.Column(db.Float)
+    is_locked = db.Column(db.Boolean, default=False, index=True)
+    locked_by = db.Column(db.String(80))
+    locked_at = db.Column(db.DateTime)
+    updated_by = db.Column(db.String(80))
+    updated_at = db.Column(db.DateTime, default=pk_model_now, onupdate=pk_model_now)
+    __table_args__ = (
+        UniqueConstraint('position_date', 'account_id', name='uq_cash_day_position'),
+    )
+

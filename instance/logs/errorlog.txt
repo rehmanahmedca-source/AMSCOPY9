@@ -1057,3 +1057,159 @@ sqlalchemy.exc.IntegrityError: (builtins.Exception) UNIQUE constraint failed: de
 2026-08-27 04:59:32,037 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
 2026-08-27 04:59:33,964 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
 2026-08-27 04:59:36,437 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:58:26,273 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:58:28,349 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:58:30,186 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:58:32,155 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:58:33,847 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:58:35,364 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:58:37,336 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:58:39,197 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:58:41,054 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:58:42,802 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:58:44,389 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:58:46,094 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:58:52,259 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:59:23,140 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:59:25,344 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:59:27,155 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:59:29,046 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:59:30,856 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:59:32,520 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:59:34,350 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:59:36,214 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:59:38,009 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:59:39,791 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:59:41,412 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:59:43,109 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:59:49,979 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:59:51,792 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:59:53,849 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:59:55,521 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:59:57,454 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 06:59:59,396 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:00:01,233 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:00:03,190 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:00:05,105 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:00:07,114 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:00:09,013 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:00:11,029 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:00:12,986 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:00:14,964 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:00:16,810 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:00:18,756 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:00:20,685 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:00:22,579 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:00:24,652 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:00:26,555 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:00:28,743 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:00:30,609 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:00:32,485 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:00:34,279 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:00:37,205 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:00:39,316 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:00:41,302 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:00:43,311 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:00:45,086 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:00:47,029 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:00:48,990 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:00:50,787 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:00:52,811 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:00:54,721 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:00:56,910 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:00:59,023 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:01:01,159 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:01:02,956 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:01:05,048 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:01:06,935 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:01:08,901 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:01:11,825 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:01:13,482 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:01:15,061 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:01:16,717 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:01:19,696 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:01:22,337 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:01:24,562 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:01:26,577 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:01:28,827 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:01:31,125 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:01:32,291 WARNING [app.services.files_pdf]: WeasyPrint native libraries unavailable (OSError); using the ReportLab PDF fallback.
+2026-08-27 07:01:33,483 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:01:35,659 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:01:38,060 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:01:40,028 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:01:42,381 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:01:44,742 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:01:46,819 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:01:49,291 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:01:51,325 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:01:53,685 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:01:56,065 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:01:58,362 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:02:00,010 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:02:01,781 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:02:05,265 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:02:07,123 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:02:07,689 WARNING [auth]: Ignoring malformed session user id 'Admin'
+2026-08-27 07:02:08,872 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:02:10,926 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:02:13,032 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:02:15,399 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:02:17,643 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:02:19,989 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:02:22,377 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:02:24,551 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:02:26,353 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:02:38,102 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:02:47,255 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:02:49,290 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:02:51,140 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:02:53,150 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:02:55,348 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:02:56,205 WARNING [security]: CSRF rejected: endpoint=sales.add_payment ip=127.0.0.1
+2026-08-27 07:02:56,206 WARNING [security]: CSRF rejected: endpoint=sales.add_direct_sale ip=127.0.0.1
+2026-08-27 07:02:56,207 WARNING [security]: CSRF rejected: endpoint=ops.grn ip=127.0.0.1
+2026-08-27 07:02:57,291 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:02:59,350 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:03:01,358 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:03:03,291 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:03:05,522 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:03:06,237 ERROR [app]: Pre-wipe safety backup failed.
+Traceback (most recent call last):
+  File "/home/user/AMSCOPY9/app/blueprints/misc/_wipe_delete_selected_data.py", line 118, in delete_selected_data
+    backup_info = _create_pre_wipe_safety_backups(targets)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/AMSCOPY9/tests/test_predator_regressions.py", line 525, in boom
+    raise RuntimeError(leak)
+RuntimeError: (sqlite3.IntegrityError) FOREIGN KEY constraint failed [SQL: DELETE FROM grn_item] (Background on this error at: https://sqlalche.me/e/20/gkpj)
+2026-08-27 07:03:07,393 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:03:08,035 ERROR [sales]: Direct sale save failed
+Traceback (most recent call last):
+  File "/home/user/AMSCOPY9/app/blueprints/sales/_direct_sales_add_direct_sale.py", line 162, in add_direct_sale
+    get_or_create_delivery_person(driver_name)
+  File "/home/user/AMSCOPY9/tests/test_predator_regressions.py", line 551, in boom
+    raise IntegrityError(
+sqlalchemy.exc.IntegrityError: (builtins.Exception) UNIQUE constraint failed: delivery_person.name
+[SQL: INSERT INTO delivery_person (name, phone) VALUES (?, ?)]
+[parameters: {'name': 'D', 'phone': None}]
+(Background on this error at: https://sqlalche.me/e/20/gkpj)
+2026-08-27 07:03:09,173 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:03:11,321 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:03:13,181 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:03:15,061 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:03:17,213 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:03:18,930 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:03:20,846 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:03:23,049 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:03:24,746 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:03:26,607 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:03:28,475 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:03:30,931 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:03:32,868 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:03:34,764 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:03:36,912 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:03:38,880 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:03:40,900 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:03:53,101 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 07:04:01,446 WARNING [security]: CSRF rejected: endpoint=auth.login ip=127.0.0.1
+2026-08-27 07:04:33,683 WARNING [security]: CSRF rejected: endpoint=reports.daily_reconciliation ip=127.0.0.1

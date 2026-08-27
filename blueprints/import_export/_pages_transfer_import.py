@@ -29,9 +29,19 @@ def _import_result_payload(ok, headline, report, extra=None):
         if row_json:
             slim['row_json'] = row_json[:300]
         issue_rows.append(slim)
-    issue_rows_count = int(report.get('issue_rows_count') or 0)
+    try:
+        issue_rows_count = int(report.get('issue_rows_count') or 0)
+    except (TypeError, ValueError):
+        issue_rows_count = 0
     if not issue_rows_count:
-        issue_rows_count = len(report.get('issue_rows') or 0)
+        raw_issues = report.get('issue_rows')
+        if isinstance(raw_issues, (list, tuple)):
+            issue_rows_count = len(raw_issues)
+        else:
+            # Missing/empty issue_rows used to be `or 0`, then len(0) crashed
+            # the JSON finish dialog (and the JSON error handler that retries
+            # this helper with {}).
+            issue_rows_count = 0
     error_details = [str(item)[:300] for item in (report.get('error_details') or [])[:100]]
     payload = {
         'ok': bool(ok),

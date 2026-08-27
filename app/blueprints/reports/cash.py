@@ -576,13 +576,14 @@ def cash_flow():
             session['cash_flow_fresh_start_cutoff'] = {
                 'date': fresh_start_date,
                 'at': pk_now().strftime('%Y-%m-%d %H:%M:%S'),
+                'user_set': True,
             }
             session.pop('cash_flow_today_opening_override', None)
             flash('Cash Flow fresh-start view reset. Existing entries are hidden from this report and today opening is Rs. 0.', 'success')
             return redirect(url_for('cash_flow', from_date=fresh_start_date, to_date=fresh_start_date, filter_type='all'))
         if action == 'clear_opening_override':
             session.pop('cash_flow_today_opening_override', None)
-            flash('Today cash flow opening override cleared. Opening is back to Rs. 0.', 'success')
+            flash('Today cash flow opening override cleared. Opening is back to the automatic carry-forward.', 'success')
         else:
             opening_override_amount = _money_round(request.form.get('today_opening_override', 0))
             session['cash_flow_today_opening_override'] = {
@@ -609,19 +610,28 @@ def cash_flow():
         to_date = from_date_dt.strftime('%Y-%m-%d')
 
     today_opening_override = _cash_flow_today_opening_override(fresh_start_date)
+    fresh_start_cutoff = _cash_flow_fresh_start_cutoff(fresh_start_date)
+    # "Fresh start" (hide existing entries, opening Rs. 0) is opt-in only:
+    # it activates when the user explicitly clicks the reset button today.
+    # By default, TODAY behaves like any other date — automatic opening
+    # carry-forward and all entries visible.
+    _cutoff_info = session.get('cash_flow_fresh_start_cutoff') or {}
+    hide_existing_today_entries = (
+        from_date_dt == fresh_start_dt and bool(_cutoff_info.get('user_set'))
+    )
+    posted_after = fresh_start_cutoff if hide_existing_today_entries else None
+
     if opening_balance_input:
         try:
             opening_balance = float(opening_balance_input)
         except ValueError:
             opening_balance = 0.0
-    elif from_date_dt == fresh_start_dt:
-        opening_balance = today_opening_override if today_opening_override is not None else 0.0
+    elif from_date_dt == fresh_start_dt and today_opening_override is not None:
+        opening_balance = today_opening_override
+    elif hide_existing_today_entries:
+        opening_balance = 0.0
     else:
         opening_balance = _automatic_cash_opening_balance(from_date_dt)
-
-    fresh_start_cutoff = _cash_flow_fresh_start_cutoff(fresh_start_date)
-    hide_existing_today_entries = from_date_dt == fresh_start_dt
-    posted_after = fresh_start_cutoff if hide_existing_today_entries else None
 
     filter_account_id = source.get('account_id', type=int)
     filter_status = (filter_kwargs.get('status') or 'active').strip().lower()
@@ -647,6 +657,14 @@ def cash_flow():
     summary = summarize_cash_flow_rows(display_rows, account_id=filter_account_id)
     total_cash_in = summary['total_cash_in']
     total_cash_out = summary['total_cash_out']
+
+    # Reconciliation must always compare physical cash against the FULL
+    # (unfiltered, company-wide) closing for the period — never against a
+    # closing narrowed by type/category/party/account display filters.
+    active_all_rows = [r for r in all_rows if (r.get('status') or 'active') == 'active']
+    reconciliation_closing = apply_running_balance(
+        [dict(r) for r in active_all_rows], opening_balance
+    )
 
     try:
         adjustment_date_dt = datetime.strptime(adjustment_date_input, '%Y-%m-%d').date()
@@ -686,7 +704,7 @@ def cash_flow():
         except ValueError as exc:
             flash(str(exc), 'danger')
             return _back()
-        difference = compute_physical_cash_difference(physical_cash_available, closing_balance)
+        difference = compute_physical_cash_difference(physical_cash_available, reconciliation_closing)
         username = _current_username()
         if not adjustment_entry:
             adjustment_entry = CashFlowDifferenceAdjustment(
@@ -711,7 +729,7 @@ def cash_flow():
             adjustment_entry.edited_date = pk_model_now()
 
         adjustment_entry.physical_cash_available = physical_cash_available
-        adjustment_entry.calculated_closing = _money_round(closing_balance)
+        adjustment_entry.calculated_closing = _money_round(reconciliation_closing)
         adjustment_entry.difference = difference
         adjustment_entry.amount = difference
         adjustment_entry.reason = reconciliation_reason
@@ -742,7 +760,7 @@ def cash_flow():
     physical_cash_available = adjustment_entry.physical_cash_available if adjustment_entry and adjustment_entry.physical_cash_available is not None else None
     adjustment_amount = float((adjustment_entry.difference if adjustment_entry and adjustment_entry.difference is not None else adjustment_entry.amount) or 0) if adjustment_entry else 0.0
     reconciliation_reason = (adjustment_entry.reason or adjustment_entry.note or '') if adjustment_entry else ''
-    adjusted_closing_balance = physical_cash_available if physical_cash_available is not None else closing_balance
+    adjusted_closing_balance = physical_cash_available if physical_cash_available is not None else reconciliation_closing
 
     if export_csv == '1':
         buf = io.StringIO()
@@ -868,6 +886,7 @@ def cash_flow():
         adjusted_closing_balance=adjusted_closing_balance,
         adjustment_date_input=adjustment_date_input,
         closing_balance=closing_balance,
+        reconciliation_closing=reconciliation_closing,
         total_cash_in=total_cash_in,
         total_cash_out=total_cash_out,
         total_transfer_in=summary['total_transfer_in'],
@@ -878,7 +897,7 @@ def cash_flow():
         fresh_start_cutoff=fresh_start_cutoff,
         fresh_start_clamped=fresh_start_clamped,
         today_opening_override=today_opening_override,
-        is_fresh_start_view=(from_date_dt == fresh_start_dt),
+        is_fresh_start_view=hide_existing_today_entries,
     )
 
     if export_pdf == '1':

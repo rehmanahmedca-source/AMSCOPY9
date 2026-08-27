@@ -245,6 +245,31 @@ def _cash_flow_in_out_between(start_date, end_date):
     return cash_in, cash_out
 
 
+def _cash_accounts_opening_total(as_of_date=None):
+    """Sum of opening balances of active company CASH accounts.
+
+    Account opening balances are part of the physical cash in hand but are
+    NOT ledger transactions, so the automatic Cash Flow opening must add
+    them explicitly — otherwise the report's closing balance never ties to
+    the cash account balance shown in Accounts.
+    """
+    from utils.money import from_minor
+    total = 0.0
+    for acc in _cf_company_accounts(active_only=True):
+        if (acc.category or '').lower() != 'cash':
+            continue
+        ob_date = getattr(acc, 'opening_balance_date', None)
+        if as_of_date is not None and ob_date is not None:
+            ob_day = ob_date.date() if hasattr(ob_date, 'date') else ob_date
+            if ob_day > as_of_date:
+                continue
+        if getattr(acc, 'opening_balance_minor', None) is not None:
+            total += float(from_minor(acc.opening_balance_minor))
+        elif acc.opening_balance is not None:
+            total += float(acc.opening_balance or 0)
+    return total
+
+
 def _automatic_cash_opening_balance(from_date_dt):
     previous_day = from_date_dt - timedelta(days=1)
     last_physical = CashFlowDifferenceAdjustment.query.filter(
@@ -253,13 +278,16 @@ def _automatic_cash_opening_balance(from_date_dt):
     ).order_by(CashFlowDifferenceAdjustment.adjustment_date.desc()).first()
 
     if last_physical:
+        # A physical count is an absolute cash figure: it already contains
+        # any account opening balances, so only roll movements forward.
         start_date = last_physical.adjustment_date + timedelta(days=1)
         opening = float(last_physical.physical_cash_available or 0)
         opening += _cash_flow_net_between(start_date, previous_day)
         opening -= _legacy_adjustments_total(start_date, previous_day)
         return opening
 
-    opening = _cash_flow_net_between(None, previous_day)
+    opening = _cash_accounts_opening_total(from_date_dt)
+    opening += _cash_flow_net_between(None, previous_day)
     opening -= _legacy_adjustments_total(None, previous_day)
     return opening
 

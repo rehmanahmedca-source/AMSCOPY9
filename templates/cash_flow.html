@@ -1417,7 +1417,7 @@
         <div class="col-auto">
           <label class="ui-label">System Calculated Closing</label>
           <div class="form-control form-control-sm font-monospace" style="background:#f8f9fa;cursor:default;font-weight:bold;">
-            Rs. {{ "{:,.0f}".format(closing_balance) }}
+            Rs. {{ "{:,.0f}".format(reconciliation_closing if reconciliation_closing is defined else closing_balance) }}
           </div>
         </div>
         <div class="col-auto">
@@ -2105,7 +2105,7 @@
         display.style.color = '#dc2626';
         return;
       }
-      const calculated = {{ closing_balance }};
+      const calculated = {{ reconciliation_closing if reconciliation_closing is defined else closing_balance }};
       const difference = value - calculated;
       const color = difference < 0 ? '#dc2626' : (difference > 0 ? '#16a34a' : '#6b7280');
       display.textContent = 'Rs. ' + difference.toLocaleString('en-PK', {minimumFractionDigits: 0, maximumFractionDigits: 2});

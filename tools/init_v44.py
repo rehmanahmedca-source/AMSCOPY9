@@ -12,7 +12,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from app.services.v44_schema import initialize_v44_database
+from app.services.v44_schema import initialize_v44_database, schema_path
 
 
 def main() -> int:

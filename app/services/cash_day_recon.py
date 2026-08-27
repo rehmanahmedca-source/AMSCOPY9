@@ -134,10 +134,16 @@ def account_positions_for_date(day) -> list:
         difference = (
             _money_round(eff_counted - expected) if eff_counted is not None else 0.0
         )
+        account_category = (acc.category or "").lower()
+        # Daily reconciliation already has dedicated balance columns.  Keep the
+        # account title clean here; showing the live current balance in the
+        # account label makes the row noisy and can be confused with the dated
+        # opening/closing figures on this board.
         positions.append({
             "account_id": acc.id,
-            "account_name": _cf_account_label(acc),
-            "category": (acc.category or "").lower(),
+            "account_name": acc.name or _cf_account_label(acc),
+            "category": account_category,
+            "category_label": account_category.upper(),
             "opening": opening,
             "in": amount_in,
             "out": amount_out,
@@ -168,7 +174,7 @@ def save_count(day, account_id, counted, actor=None):
         pos = CashDayAccountPosition(
             position_date=day,
             account_id=account_id,
-            account_name=_cf_account_label(acc) if acc else "",
+            account_name=(acc.name if acc else ""),
         )
         db.session.add(pos)
     pos.counted = float(counted)

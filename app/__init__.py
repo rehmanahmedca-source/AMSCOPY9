@@ -278,22 +278,23 @@ def create_app(test_config: dict | None = None) -> Flask:
                     from app.services.v44_schema import (
                         initialize_v44_database,
                         retire_legacy_database_files,
+                        schema_path as v44_schema_path,
                     )
                     retire_legacy_database_files(instance_dir, extra_dirs=[root / "v44"])
                     _retire_stale_live_health_snapshot(snapshot_path)
                 _guard_db_file_before_bootstrap()
                 if app.config.get("AMS_SCHEMA_VERSION") == "v44":
-                    # The optional v4.4 SQL bundle is a *nice to have*: it seeds
-                    # the new roles/permissions tables.  It must never be able to
-                    # abort the ORM bootstrap below, because that leaves the
-                    # database without the `user` table and every login POST
-                    # then dies with "no such table: user" (HTTP 500).
+                    # Optional v4.4 SQL bundle. It is not in the repo; skip
+                    # silently and let the ORM bootstrap create tables. Never
+                    # abort here — that used to leave no `user` table and a
+                    # 500 on every login.
                     try:
-                        initialize_v44_database(
-                            db_path,
-                            default_user=(os.environ.get("DEFAULT_ADMIN_USER") or "Admin").strip() or "Admin",
-                            default_password=(os.environ.get("DEFAULT_ADMIN_PASSWORD") or "Admin@fbm12345").strip() or "Admin@fbm12345",
-                        )
+                        if v44_schema_path().exists():
+                            initialize_v44_database(
+                                db_path,
+                                default_user=(os.environ.get("DEFAULT_ADMIN_USER") or "Admin").strip() or "Admin",
+                                default_password=(os.environ.get("DEFAULT_ADMIN_PASSWORD") or "Admin@fbm12345").strip() or "Admin@fbm12345",
+                            )
                     except Exception:
                         logging.getLogger(__name__).warning(
                             "v4.4 schema bootstrap skipped; continuing with the "

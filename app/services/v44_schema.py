@@ -85,6 +85,12 @@ def initialize_v44_database(db_path: str, *, default_user: str = "Admin",
     path.parent.mkdir(parents=True, exist_ok=True)
     existed = path.exists() and path.stat().st_size > 0
     schema_file = schema_path()
+    # The SQL bundle was removed from the repo (cleanup PR). Runtime tables
+    # come from the ORM bootstrap (``db.create_all()`` + column repair).
+    # Do not warn — a WARNING here was written to instance/logs/errorlog.txt
+    # on every worker start / health check and looked like a recon failure.
+    if not schema_file.exists():
+        return False
     conn = sqlite3.connect(str(path))
     try:
         conn.execute("PRAGMA foreign_keys=ON")
@@ -107,17 +113,6 @@ def initialize_v44_database(db_path: str, *, default_user: str = "Admin",
             # bootstrap ran, or left behind by a previously failed bootstrap).
             # Treat it as a fresh install instead of bricking every boot.
             existed = False
-        if not schema_file.exists():
-            # The v4.4 SQL bundle is optional; the ORM bootstrap
-            # (``db.create_all()`` + default admin) creates a fully usable
-            # database on its own.  Refusing to start here used to leave the
-            # instance with zero tables and a 500 on every login.
-            logging.getLogger(__name__).warning(
-                "v4.4 schema file not found at %s; falling back to the ORM "
-                "schema bootstrap.",
-                schema_file,
-            )
-            return False
         sql = schema_file.read_text(encoding="utf-8")
         conn.executescript(sql)
         # The SQL bundle seeds roles, permissions and wipe scopes, but users are

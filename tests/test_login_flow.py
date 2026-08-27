@@ -41,6 +41,32 @@ def test_login_then_dashboard_on_fresh_database(client):
     assert home.status_code == 200
 
 
+def test_missing_v44_sql_is_not_logged_as_error(app_factory, tmp_path, caplog):
+    """SCHEMA_v4_4.sql is not in the repo. Looking for it used to WARNING
+    into instance/logs/errorlog.txt on every worker start, which showed up
+    while using Daily Reconciliation and looked like the save had failed.
+    ORM bootstrap must still create a usable database.
+    """
+    import logging
+
+    from app.services.v44_schema import initialize_v44_database, schema_path
+
+    assert not schema_path().exists()
+    assert initialize_v44_database(str(tmp_path / "fresh.db")) is False
+
+    db_file = tmp_path / "orm.db"
+    with caplog.at_level(logging.WARNING):
+        app = app_factory(db_file)
+    noise = [
+        r.getMessage()
+        for r in caplog.records
+        if "SCHEMA_v4_4.sql" in r.getMessage() or "v4.4 schema file not found" in r.getMessage()
+    ]
+    assert noise == []
+    assert app.config.get("AMS_BOOTSTRAP_ERROR") is None
+    assert _raw_login_post(app.test_client()).status_code == 302
+
+
 def test_bootstrap_recovers_from_empty_database_file(app_factory, tmp_path):
     """An empty SQLite file must not brick every later start-up."""
     db_file = tmp_path / "empty.db"

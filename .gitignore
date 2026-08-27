@@ -1,10 +1,16 @@
 .venv/
+venv/
 deployment.log
+.deploy_state.json
 .instance_preserve/
+# Local environment file with secrets (NEVER committed)
+.env
 instance/*.db
 instance/*.db-wal
 instance/*.db-shm
 instance/health_snapshot.json
+# Pre-deploy database backups made by the deployer
+instance/backups/
 v44/*.db
 v44/*.db-wal
 v44/*.db-shm

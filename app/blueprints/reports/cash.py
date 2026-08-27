@@ -1043,6 +1043,24 @@ def _safe_return_to():
     return None
 
 
+def _dr_wants_json():
+    return (
+        request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+        or request.accept_mimetypes.best == 'application/json'
+    )
+
+
+def _dr_json_context(day_str):
+    ctx = _dr_build_context(day_str)
+    return {
+        'day_str': ctx['day_str'],
+        'total_expected': ctx['total_expected'],
+        'total_counted': ctx['total_counted'],
+        'net_difference': ctx['net_difference'],
+        'positions': ctx['positions'],
+    }
+
+
 @bp.route('/daily_reconciliation', methods=['GET', 'POST'])
 @login_required
 def daily_reconciliation():
@@ -1058,27 +1076,47 @@ def daily_reconciliation():
 
     if request.method == 'POST':
         action = (request.form.get('action') or '').strip()
-        if action == 'save_count':
-            try:
+        wants_json = _dr_wants_json()
+        ok = True
+        message = ''
+        status = 'success'
+        try:
+            if action == 'save_count':
+                counted_raw = (request.form.get('counted') or '').strip()
+                if counted_raw == '':
+                    raise ValueError('empty counted amount')
                 recon.save_count(
                     day_str,
                     int(request.form.get('account_id')),
-                    float(request.form.get('counted') or 0),
+                    float(counted_raw),
                     actor=current_user,
                 )
-                flash('Counted balance saved.', 'success')
-            except (TypeError, ValueError):
-                db.session.rollback()
-                flash('Enter a valid counted amount.', 'danger')
-        elif action == 'lock':
-            recon.lock_day(day_str, actor=current_user, note=request.form.get('note') or '')
-            flash(f'Day {day_str} verified & locked. Locked totals become the next day opening.', 'success')
-        elif action == 'unlock':
-            recon.unlock_day(day_str)
-            flash(f'Day {day_str} unlocked.', 'warning')
-        elif action == 'clear_count':
-            recon.delete_count(day_str, int(request.form.get('account_id')))
-            flash('Counted balance cleared.', 'warning')
+                message = 'Counted balance saved.'
+                status = 'success'
+            elif action == 'lock':
+                recon.lock_day(day_str, actor=current_user, note=request.form.get('note') or '')
+                message = f'Day {day_str} verified & locked. Locked totals become the next day opening.'
+                status = 'success'
+            elif action == 'unlock':
+                recon.unlock_day(day_str)
+                message = f'Day {day_str} unlocked.'
+                status = 'warning'
+            elif action == 'clear_count':
+                recon.delete_count(day_str, int(request.form.get('account_id')))
+                message = 'Counted balance cleared.'
+                status = 'warning'
+            else:
+                raise ValueError('Unsupported reconciliation action.')
+        except (TypeError, ValueError):
+            db.session.rollback()
+            ok = False
+            message = 'Enter a valid counted amount.' if action == 'save_count' else 'Unable to update reconciliation.'
+            status = 'danger'
+        if wants_json:
+            payload = _dr_json_context(day_str)
+            payload.update({'ok': ok, 'message': message, 'status': status})
+            return jsonify(payload), (200 if ok else 400)
+        flash(message, status)
         rt = _safe_return_to()
         if rt:
             return redirect(rt)

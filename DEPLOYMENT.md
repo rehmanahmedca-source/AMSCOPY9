@@ -103,13 +103,66 @@ and everything follows.
 
 ### D. Enable the webhook
 GitHub Actions calls the webhook directly (no GitHub webhook registration is
-required). If you *also* want GitHub to nudge the server, you can add a
-repository Webhook (Settings → Webhooks → Add):
+required). If you *also* want GitHub to nudge the server on every push, add a
+repository Webhook (**Settings → Webhooks → Add a webhook**). Pick ONE of the
+two authentication options — both use the same secret:
+
+**Option 1 — GitHub's native signature (recommended).**
+GitHub signs every payload with the webhook's *secret* and sends the digest
+in the `X-Hub-Signature-256` header; the app verifies it with
+`AMS_WEBHOOK_TOKEN`. No token in the URL:
+
+- Payload URL: `https://<your-domain>/git-auto-pull`
+- Content type: `application/json`
+- **Secret: paste the SAME value as `AMS_WEBHOOK_TOKEN`**
+- Events: **Just the `push` event**
+
+**Option 2 — shared token in the URL.** The app also accepts
+`?token=YOUR_TOKEN` (or an `X-Deploy-Token` header) compared in constant
+time. Use this if you'd rather not set the webhook *secret*:
+
 - Payload URL: `https://<your-domain>/git-auto-pull?token=YOUR_TOKEN`
-- Content type: application/json
-- Events: **Just the push event**
+- Content type: `application/json`
+- Events: **Just the `push` event**
+
+> **The one rule:** the value in the GitHub webhook *secret* (Option 1) or
+> in the `?token=` URL (Option 2) must be the **exact same string** as the
+> `AMS_WEBHOOK_TOKEN` environment variable on the PythonAnywhere web app
+> (set it in the WSGI file, see step C.5). Anything else → `403`.
 
 This is optional — the included GitHub Action already triggers the deploy.
+
+### E. One-time manual sync (and whenever the server is stale)
+The webhook can only deploy *new* code — it cannot fix itself. If
+`/git-auto-pull` keeps failing (400/403) or you change webhook
+authentication, sync the server once by hand:
+
+```bash
+# PythonAnywhere → Bash console
+cd ~/AMSCOPY9
+git fetch origin
+git checkout main
+git reset --hard origin/main      # safe: instance/*.db is git-ignored
+source ~/.virtualenvs/ams-venv/bin/activate
+pip install -r requirements.txt
+```
+Then **Web app → Reload**. (The live SQLite DB in `instance/` is
+git-ignored, so `git reset --hard` only touches code.)
+
+### F. Troubleshooting failed webhook deliveries
+GitHub repo → **Settings → Webhooks → Recent deliveries** shows each push
+and the HTTP status the server answered.
+
+| GitHub shows | Meaning | Fix |
+|---|---|---|
+| `400` | The running code is **older** than the current repo (an old build answered the request), or a middleware rejected the POST. | Do the one-time manual sync (section E), reload, then redeliver from GitHub's delivery list. |
+| `403` | Request reached the webhook but **authentication failed**: the webhook *secret* / `?token=` value and the server's `AMS_WEBHOOK_TOKEN` are not the same string, or the token isn't set in the *web app* environment. | Make the two values identical (see rule above); remember the env var must be set in the WSGI file — a bash-console `export` does NOT reach the web app. Reload after editing. |
+| `503` "Deploy token not configured" | `AMS_WEBHOOK_TOKEN` is not set in the web app environment. | Set it in the WSGI file, reload. |
+| `202` "Deployment started" | Webhook accepted; the deploy runs in the background. | Watch `~/AMSCOPY9/deployment.log` in a Bash console; if a stage fails the log shows which one. |
+
+After any change, confirm the fix is live:
+`https://<your-domain>/health` → `"commit"` should equal the short SHA of
+the commit on the server (`git rev-parse --short HEAD` in the console).
 
 ---
 

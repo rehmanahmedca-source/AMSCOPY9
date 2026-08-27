@@ -6,7 +6,11 @@ public /health endpoint.
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import importlib
+import json
+import time
 
 import pytest
 
@@ -105,6 +109,126 @@ def test_webhook_get_is_online_but_post_requires_token(app, client):
         headers={"X-GitHub-Event": "push"},
     )
     assert resp.status_code in (403, 503)
+
+
+# ------------------------------------------------------------------
+# GitHub native webhook (X-Hub-Signature-256) authentication
+# ------------------------------------------------------------------
+
+def _signed_post(client, body: bytes, secret: str, **extra_headers):
+    """POST *body* to the webhook with the GitHub-style signature headers.
+
+    *client* must be a RAW Flask test client (``app.test_client()``), not the
+    CSRF-injecting proxy fixture: GitHub sends no session and no CSRF token,
+    and the endpoint must work exactly that way.
+    """
+    headers = {
+        "X-GitHub-Event": "push",
+        "X-Hub-Signature-256": (
+            "sha256="
+            + hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+        ),
+        "X-Hub-Signature": (
+            "sha1="
+            + hmac.new(secret.encode("utf-8"), body, hashlib.sha1).hexdigest()
+        ),
+    }
+    headers.update(extra_headers)
+    return client.post(
+        "/git-auto-pull",
+        data=body,
+        content_type="application/json",
+        headers=headers,
+    )
+
+
+def _wait_until(predicate, timeout=3.0):
+    deadline = time.time() + timeout
+    while not predicate():
+        if time.time() > deadline:
+            return False
+        time.sleep(0.05)
+    return True
+
+
+def test_webhook_accepts_valid_github_signature(app, monkeypatch):
+    monkeypatch.setenv("AMS_WEBHOOK_TOKEN", "test-webhook-secret")
+    deployed = []
+    monkeypatch.setattr(
+        "deploy.deployer.deploy",
+        lambda *a, **k: deployed.append(1) or {"ok": True},
+    )
+    raw = app.test_client()
+    body = json.dumps({"ref": "refs/heads/main"}).encode()
+    resp = _signed_post(raw, body, "test-webhook-secret")
+    assert resp.status_code == 202
+    assert resp.get_json()["success"] is True
+    assert _wait_until(lambda: deployed), "valid signature must start a deployment"
+
+
+def test_webhook_rejects_bad_signature_and_tampered_body(app, monkeypatch):
+    monkeypatch.setenv("AMS_WEBHOOK_TOKEN", "test-webhook-secret")
+    deployed = []
+    monkeypatch.setattr("deploy.deployer.deploy", lambda *a, **k: deployed.append(1))
+    raw = app.test_client()
+    body = json.dumps({"ref": "refs/heads/main"}).encode()
+    # Body signed with the wrong key -> 403, no deploy started.
+    resp = _signed_post(raw, body, "wrong-secret")
+    assert resp.status_code == 403
+    assert deployed == []
+    # A tampered body under a valid signature -> 403 as well.
+    resp = raw.post(
+        "/git-auto-pull",
+        data=body + b" ",  # body changed after signing
+        content_type="application/json",
+        headers={
+            "X-GitHub-Event": "push",
+            "X-Hub-Signature-256": "sha256="
+            + hmac.new(b"test-webhook-secret", body, hashlib.sha256).hexdigest(),
+        },
+    )
+    assert resp.status_code == 403
+    assert deployed == []
+
+
+def test_webhook_accepts_sha1_legacy_signature(app, monkeypatch):
+    monkeypatch.setenv("AMS_WEBHOOK_TOKEN", "test-webhook-secret")
+    deployed = []
+    monkeypatch.setattr(
+        "deploy.deployer.deploy",
+        lambda *a, **k: deployed.append(1) or {"ok": True},
+    )
+    raw = app.test_client()
+    body = json.dumps({"ref": "refs/heads/main"}).encode()
+    resp = raw.post(
+        "/git-auto-pull",
+        data=body,
+        content_type="application/json",
+        headers={
+            "X-GitHub-Event": "push",
+            "X-Hub-Signature": "sha1="
+            + hmac.new(b"test-webhook-secret", body, hashlib.sha1).hexdigest(),
+        },
+    )
+    assert resp.status_code == 202
+    assert _wait_until(lambda: deployed)
+
+
+def test_webhook_still_accepts_token_query_param(app, monkeypatch):
+    monkeypatch.setenv("AMS_WEBHOOK_TOKEN", "test-webhook-secret")
+    deployed = []
+    monkeypatch.setattr(
+        "deploy.deployer.deploy",
+        lambda *a, **k: deployed.append(1) or {"ok": True},
+    )
+    raw = app.test_client()
+    resp = raw.post(
+        "/git-auto-pull?token=test-webhook-secret",
+        json={"ref": "refs/heads/main"},
+        headers={"X-GitHub-Event": "push"},
+    )
+    assert resp.status_code == 202
+    assert _wait_until(lambda: deployed)
 
 
 def test_deployer_dry_run_needs_secret(app, monkeypatch):

@@ -113,6 +113,49 @@ def test_partial_import_payload_lists_missed_rows(import_app, client):
         assert Material.query.filter_by(id=12).first() is None
 
 
+def test_import_result_payload_survives_empty_and_missing_issue_rows():
+    """Empty reports must not raise TypeError: object of type 'int' has no len().
+
+    The finish-dialog helper used ``len(report.get('issue_rows') or 0)``. When
+    issue_rows was missing or empty, that became ``len(0)`` and crashed both
+    the success JSON path and the JSON error handler that retries with {}.
+    """
+    from blueprints.import_export._pages_transfer_import import (
+        _import_result_payload,
+    )
+
+    empty = _import_result_payload(False, "Import failed", {})
+    assert empty["ok"] is False
+    assert empty["headline"] == "Import failed"
+    assert empty["issue_rows"] == []
+    assert empty["issue_rows_count"] == 0
+    assert empty["error_details"] == []
+
+    listed = _import_result_payload(True, "ok", {
+        "issue_rows": [
+            {"table": "material", "status": "skipped", "reason": "duplicate_primary_key"},
+        ],
+    })
+    assert listed["issue_rows_count"] == 1
+    assert listed["issue_rows"][0]["reason"] == "duplicate_primary_key"
+
+
+def test_json_import_without_file_returns_error_payload(client):
+    """POST /transfer/import with no file used to 500 while building JSON."""
+    login(client)
+    resp = client.post(
+        "/import_export/transfer/import",
+        data={"format": "json", "sections": "literal_all"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 400, resp.get_data(as_text=True)[:500]
+    payload = resp.get_json()
+    assert payload["ok"] is False
+    assert payload["issue_rows"] == []
+    assert payload["issue_rows_count"] == 0
+    assert "upload" in (payload.get("headline") or "").lower()
+
+
 def test_full_success_payload_reports_100_percent(import_app, client):
     login(client)
     from models import Material

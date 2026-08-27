@@ -98,8 +98,8 @@ GITHUB_REPO_URL = _github_repo_url()
 # so the same committed config.py works across installs while the
 # real machine-specific values can be injected privately.
 
-PYTHONANYWHERE_USERNAME = "tempservofbm"
-PYTHONANYWHERE_DOMAIN = "tempservofbm.pythonanywhere.com"
+PYTHONANYWHERE_USERNAME = "ahmedrehmanahmed1"
+PYTHONANYWHERE_DOMAIN = "ahmedrehmanahmed1.pythonanywhere.com"
 
 # Absolute paths ON the PythonAnywhere server.
 PYTHONANYWHERE_PROJECT_PATH = f"/home/{PYTHONANYWHERE_USERNAME}/AMSCOPY9"
